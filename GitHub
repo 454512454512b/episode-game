@@ -412,6 +412,12 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
   color:#fff; font-family:'JetBrains Mono',monospace; letter-spacing:.03em;
   text-align:center; padding:10px 14px; font-size:12px;
 }
+#supabase-diag{
+  display:none; position:fixed; top:0; left:0; right:0; z-index:90;
+  background:#b3261e; color:#fff; font-family:'JetBrains Mono',monospace;
+  text-align:center; padding:12px 14px; font-size:12px; letter-spacing:.02em;
+  word-break:break-word;
+}
 @keyframes bannerPulse{ 50%{ filter:brightness(1.18);} }
 
 /* ---------- fullscreen countdown inside an event ---------- */
@@ -439,6 +445,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 <div id="toast-layer"></div>
 <div id="global-countdown-banner"></div>
 <div id="save-warning-banner"></div>
+<div id="supabase-diag"></div>
 
 <!-- WELCOME SCREEN -->
 <div id="welcome">
@@ -565,6 +572,56 @@ function getEpisodeMeta(id){
 const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_URL.indexOf('YOUR_') === -1)
   ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+/* Diagnostic self-check, shown as a visible banner so a non-developer can screenshot the exact reason */
+async function checkSupabaseConnection(){
+  const diag = document.getElementById('supabase-diag');
+  if(!diag) return;
+  if(!sbClient){
+    diag.textContent = '⚠ ДИАГНОСТИКА: Supabase не подключён — в коде всё ещё стоят значения-заглушки YOUR_SUPABASE_URL / YOUR_SUPABASE_ANON_KEY. Впиши свои настоящие значения.';
+    diag.style.display = 'block';
+    return;
+  }
+  try{
+    const { error } = await sbClient.from('app_storage').select('key').limit(1);
+    if(error){
+      diag.textContent = '⚠ ДИАГНОСТИКА: Supabase ответил ошибкой — ' + error.message;
+      diag.style.display = 'block';
+    } else {
+      diag.style.display = 'none';
+    }
+  } catch(e){
+    diag.textContent = '⚠ ДИАГНОСТИКА: не удалось подключиться к Supabase — ' + (e && e.message ? e.message : String(e));
+    diag.style.display = 'block';
+  }
+}
+checkSupabaseConnection();
+
+/* ============ LIVE SYNC (Supabase Realtime) ============
+   Any change anyone makes (points, chat, new player, episode status, etc.)
+   pushes an update to everyone currently on the site — no manual refresh needed. */
+if(sbClient){
+  sbClient
+    .channel('app_storage_live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'app_storage' }, ()=> handleLiveUpdate())
+    .subscribe();
+}
+
+async function handleLiveUpdate(){
+  if(document.getElementById('app').style.display === 'none') return; // not logged in yet
+  state.players = await sGet('players', []);
+  state.episodes = await sGet('episodes', {});
+  state.episodeOverrides = await sGet('episode_overrides', {});
+  renderHeader();
+  const activeBtn = document.querySelector('#main-nav button.active');
+  const activeView = activeBtn ? activeBtn.dataset.view : 'home';
+  if(activeView === 'home') renderHome();
+  if(activeView === 'players') renderPlayers();
+  if(activeView === 'episodes') renderEpisodes();
+  if(activeView === 'events') renderEventsList();
+  if(activeView === 'prize') renderPrize();
+  if(activeView === 'admin' && state.isAdmin) renderAdmin();
+}
 
 async function sGet(key, fallback){
   if(!sbClient) return fallback;
