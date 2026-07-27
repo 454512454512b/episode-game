@@ -1,0 +1,1526 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPISODE</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap');
+
+:root{
+  --bg: #0a0806;
+  --bg-2: #120e0a;
+  --ember: #c97c2c;
+  --ember-bright: #f5b464;
+  --rust: #7a2e1e;
+  --parchment: #f7f1e3;
+  --ash: #a89e8f;
+  --ash-dim: #57504a;
+  --green-ok: #7fae6f;
+  --grad-ember: linear-gradient(120deg, #f5b464 0%, #e08a3a 45%, #c9602c 100%);
+}
+.grad-text{
+  background: var(--grad-ember);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  background:var(--bg);
+  color:var(--parchment);
+  font-family:'Cormorant Garamond', serif;
+  overflow-x:hidden;
+  min-height:100vh;
+}
+.disp{font-family:'Cinzel', serif; letter-spacing:.04em;}
+.mono{font-family:'JetBrains Mono', monospace;}
+::selection{background:var(--ember); color:#000;}
+
+/* ---------- ambient burnt-edge vignette ---------- */
+.vignette{
+  position:fixed; inset:0; pointer-events:none; z-index:5;
+  opacity:0;
+  box-shadow:
+    inset 0 0 12vw 3vw rgba(4,3,2,0.92),
+    inset 0 0 4vw 1vw rgba(180,90,20,0.10);
+  animation: igniteVignette 2.4s ease forwards, breathe 10s ease-in-out infinite 2.4s;
+}
+@keyframes igniteVignette{ from{opacity:0;} to{opacity:1;} }
+@keyframes breathe{
+  0%,100%{ box-shadow: inset 0 0 12vw 3vw rgba(4,3,2,0.92), inset 0 0 4vw 1vw rgba(180,90,20,0.10);}
+  50%{ box-shadow: inset 0 0 16vw 5vw rgba(4,3,2,0.95), inset 0 0 6vw 1.8vw rgba(210,120,35,0.22);}
+}
+#burn-canvas{
+  position:fixed; inset:0; z-index:1; pointer-events:none; width:100%; height:100%;
+}
+
+#ash-layer{position:fixed; inset:0; pointer-events:none; z-index:6; overflow:hidden;}
+.ash-particle{
+  position:absolute; bottom:-10px; border-radius:50%;
+  background: radial-gradient(circle, var(--ember-bright), transparent 70%);
+  opacity:0;
+  animation-name: rise;
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
+}
+@keyframes rise{
+  0%{ transform:translateY(0) translateX(0); opacity:0;}
+  8%{ opacity:.9;}
+  90%{ opacity:.25;}
+  100%{ transform:translateY(-105vh) translateX(var(--drift,20px)); opacity:0;}
+}
+
+/* ---------- welcome screen ---------- */
+#welcome{
+  position:fixed; inset:0; z-index:10;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; padding:24px;
+  transition: opacity .5s ease;
+}
+.title-wrap{display:flex; gap:.08em; justify-content:center; margin-bottom:18px;}
+.title-wrap span{
+  font-size: clamp(48px, 12vw, 96px);
+  font-weight:900;
+  color: var(--ember-bright);
+  opacity:0;
+  display:inline-block;
+  text-shadow: 0 0 24px rgba(240,168,72,0.0);
+  animation: emberIn 1.7s cubic-bezier(.19,1,.22,1) forwards, emberSettle 3.5s ease-in-out infinite;
+  animation-delay: calc(var(--d, 0s)), calc(var(--d, 0s) + 1.7s);
+}
+@keyframes emberIn{
+  0%{ opacity:0; transform: translateY(26px) scale(.8); filter: blur(10px); text-shadow: 0 0 0 rgba(240,168,72,0);}
+  45%{ opacity:1; filter: blur(1px); text-shadow: 0 0 50px rgba(245,180,100,.95), 0 0 16px rgba(245,180,100,1);}
+  75%{ text-shadow: 0 0 18px rgba(245,180,100,.4);}
+  100%{ opacity:1; transform: translateY(0) scale(1); text-shadow: 0 0 14px rgba(245,180,100,.45);}
+}
+@keyframes emberSettle{
+  0%,100%{ text-shadow: 0 0 14px rgba(245,180,100,.45);}
+  50%{ text-shadow: 0 0 22px rgba(245,180,100,.7);}
+}
+.subtitle{
+  font-style:italic; color:var(--ash); font-size: clamp(15px,2.4vw,20px);
+  opacity:0; letter-spacing:.06em;
+  animation: fadeUp 1.8s ease forwards;
+  animation-delay: 2.6s;
+}
+@keyframes fadeUp{
+  from{opacity:0; transform:translateY(14px);}
+  to{opacity:1; transform:translateY(0);}
+}
+.reg-box{
+  margin-top:36px; width:min(380px, 88vw);
+  opacity:0; animation: fadeUp 1.6s ease forwards; animation-delay: 3.6s;
+}
+.reg-box input[type=text]{
+  width:100%; padding:15px 16px; font-size:19px; text-align:center; letter-spacing:.03em;
+  transition: border-color .3s, box-shadow .3s;
+}
+.reg-box input[type=text]:focus{ border-color:var(--ember-bright); box-shadow:0 0 18px rgba(201,124,44,.4);}
+.photo-row{ margin-top:18px; display:flex; flex-direction:column; align-items:center; gap:12px;}
+.photo-frame{
+  width:112px; height:112px; border-radius:50%; border:2px solid var(--ember);
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+  background:rgba(255,255,255,0.03); position:relative; cursor:pointer;
+  box-shadow:0 0 0 rgba(201,124,44,0);
+  transition: box-shadow .4s, border-color .3s, transform .2s;
+}
+.photo-frame:hover{ border-color:var(--ember-bright); box-shadow:0 0 22px rgba(201,124,44,.4); transform:scale(1.03);}
+.photo-frame:hover #photo-placeholder{ color:var(--ember-bright);}
+.photo-frame.has-photo{ box-shadow:0 0 26px rgba(201,124,44,.45);}
+#photo-placeholder{ font-size:34px; color:var(--ash); font-weight:300; transition:color .3s;}
+#photo-preview{
+  width:100%; height:100%; object-fit:cover; display:none;
+  filter: grayscale(.35) sepia(.35) contrast(1.08) brightness(.92);
+}
+.photo-hint{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.03em;}
+.enter-btn{
+  margin-top:24px; width:100%; padding:18px; background:transparent;
+  border:1.5px solid var(--ember); color:var(--ember-bright); font-family:'Cinzel',serif;
+  letter-spacing:.16em; font-size:15px; cursor:pointer; text-transform:uppercase;
+  position:relative; overflow:hidden;
+  animation: pulseGlow 3.6s ease-in-out infinite; transition: background .35s, color .35s, transform .2s, letter-spacing .35s;
+}
+.enter-btn:hover{ background:var(--ember); color:#140c06; letter-spacing:.22em;}
+.enter-btn:active{ transform: scale(.97);}
+.enter-btn::before{
+  content:''; position:absolute; top:0; left:-60%; width:40%; height:100%;
+  background:linear-gradient(120deg, transparent, rgba(255,255,255,.35), transparent);
+  animation: sweep 3.6s ease-in-out infinite;
+}
+@keyframes sweep{ 0%{left:-60%;} 60%,100%{left:130%;} }
+@keyframes pulseGlow{
+  0%,100%{ box-shadow: 0 0 8px rgba(201,124,44,.3), inset 0 0 0px rgba(201,124,44,0);}
+  50%{ box-shadow: 0 0 34px rgba(201,124,44,.7), inset 0 0 14px rgba(201,124,44,.15);}
+}
+.reg-error{ min-height:18px; margin-top:12px; font-size:13px; color:#ff9a85; letter-spacing:.02em;}
+
+/* burn transition overlay */
+#burn-transition{
+  position:fixed; inset:0; z-index:50; pointer-events:none; opacity:0;
+  background: radial-gradient(circle, #fff6 0%, var(--ember-bright) 26%, #3a1904 60%, #000 100%);
+}
+#burn-transition.play{ animation: burnFlash 1.7s cubic-bezier(.4,0,.2,1) forwards;}
+@keyframes burnFlash{
+  0%{ opacity:0;}
+  22%{ opacity:1;}
+  55%{ opacity:1;}
+  100%{ opacity:0;}
+}
+#shock-ring{
+  position:fixed; z-index:51; top:50%; left:50%; width:20px; height:20px; pointer-events:none;
+  border-radius:50%; border:2px solid rgba(245,180,100,.9);
+  transform: translate(-50%,-50%) scale(0); opacity:0;
+}
+#shock-ring.play{ animation: shockOut 1.4s cubic-bezier(.2,.7,.3,1) forwards;}
+@keyframes shockOut{
+  0%{ transform: translate(-50%,-50%) scale(0); opacity:1; box-shadow:0 0 0 rgba(245,180,100,0);}
+  70%{ opacity:.7;}
+  100%{ transform: translate(-50%,-50%) scale(70); opacity:0; box-shadow:0 0 60px rgba(245,180,100,.3);}
+}
+
+/* ---------- main site ---------- */
+#app{ display:none; min-height:100vh; position:relative; z-index:2;}
+header{
+  position:sticky; top:0; z-index:20; background:rgba(10,8,6,.88); backdrop-filter: blur(6px);
+  border-bottom:1px solid var(--ash-dim); padding:14px 20px;
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;
+}
+.logo{ font-family:'Cinzel',serif; font-weight:700; letter-spacing:.12em; font-size:19px; color:var(--ember-bright); text-shadow:0 0 10px rgba(245,180,100,.3);}
+.mini-lb{ display:flex; gap:14px; font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--ash);}
+.mini-lb b{ color:var(--ember-bright); font-weight:600;}
+nav{ display:flex; gap:4px; flex-wrap:wrap;}
+nav button{
+  background:transparent; border:none; color:var(--ash); font-family:'Cinzel',serif;
+  font-size:12px; letter-spacing:.08em; padding:9px 13px; cursor:pointer; text-transform:uppercase;
+  border-bottom:2px solid transparent; transition: all .3s;
+}
+nav button:hover{ color:var(--ember-bright); border-bottom-color:var(--ember-bright); text-shadow:0 0 12px rgba(245,180,100,.4);}
+nav button.active{ color:var(--ember-bright); border-bottom-color:var(--ember); text-shadow:0 0 10px rgba(245,180,100,.3);}
+main{ max-width:920px; margin:0 auto; padding:30px 20px 80px;}
+
+.view{ display:none; animation: viewIn .5s ease; }
+.view.active{ display:block;}
+@keyframes viewIn{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
+
+h2.section-title{ font-family:'Cinzel',serif; font-size:22px; letter-spacing:.06em; margin-bottom:18px; color:var(--ember-bright); text-shadow:0 0 12px rgba(245,180,100,.25); display:inline-block;}
+
+.banner-active{
+  border:1px solid var(--ember); padding:16px 18px; margin-bottom:24px; border-radius:2px;
+  background:linear-gradient(90deg, rgba(201,124,44,.08), transparent); cursor:pointer;
+}
+.banner-active:hover{ background:linear-gradient(90deg, rgba(201,124,44,.15), transparent);}
+.banner-active .tag{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ember); letter-spacing:.1em;}
+.banner-active .name{ font-family:'Cinzel',serif; font-size:18px; margin-top:4px;}
+
+table.lb{ width:100%; border-collapse:collapse; font-size:16px;}
+table.lb th{ text-align:left; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); text-transform:uppercase; letter-spacing:.08em; padding:8px 10px; border-bottom:1px solid var(--ash-dim);}
+table.lb td{ padding:10px; border-bottom:1px solid rgba(255,255,255,0.04);}
+table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
+.rank{ font-family:'JetBrains Mono',monospace; color:var(--ash);}
+.rank.top1{ color:var(--ember-bright);}
+.avatar-sm{ width:32px; height:32px; border-radius:50%; object-fit:cover; vertical-align:middle; margin-right:10px; border:1px solid var(--ash-dim); filter: grayscale(.35) sepia(.35) contrast(1.08) brightness(.92);}
+.pts{ font-family:'JetBrains Mono',monospace; color:var(--ember-bright);}
+
+.event-feed{ margin-top:28px;}
+.event-item{
+  font-size:14px; color:var(--ash); padding:8px 0; border-bottom:1px dotted var(--ash-dim);
+  opacity:0; animation: fadeUp .5s ease forwards;
+}
+.event-item .ts{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--ash-dim); margin-right:8px;}
+
+.grid-cards{ display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:14px;}
+.player-card{
+  border:1px solid var(--ash-dim); padding:14px; text-align:center; cursor:pointer; border-radius:2px;
+  opacity:0; transform:translateY(14px); animation: cardIn .5s ease forwards;
+  transition: border-color .25s, transform .25s;
+}
+.player-card:hover{ border-color:var(--ember); transform:translateY(-3px);}
+@keyframes cardIn{ to{opacity:1; transform:translateY(0);} }
+.player-card img{ width:56px; height:56px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:1px solid var(--ember); filter: grayscale(.35) sepia(.35) contrast(1.08) brightness(.92);}
+.player-card .noph{ width:56px; height:56px; border-radius:50%; margin:0 auto 10px; background:var(--ash-dim); display:flex; align-items:center; justify-content:center; font-family:'Cinzel',serif; color:var(--parchment);}
+.player-card .pname{ font-size:15px;}
+.player-card .pnum{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash);}
+
+.ep-card{
+  border:1px solid var(--ash-dim); padding:16px 18px; margin-bottom:12px; border-radius:2px;
+  cursor:pointer; display:flex; justify-content:space-between; align-items:center;
+  opacity:0; transform:translateY(10px); animation: cardIn .5s ease forwards;
+  transition: border-color .25s;
+}
+.ep-card:hover{ border-color:var(--ember);}
+.ep-card .epname{ font-family:'Cinzel',serif; font-size:16px;}
+.ep-icon{
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:50%; font-size:19px; line-height:1;
+  border:1px solid var(--ash-dim); background:rgba(201,124,44,0.07);
+  filter: grayscale(.45) sepia(.55) saturate(1.4) brightness(.95) contrast(1.05);
+}
+
+/* paper-style inputs: parchment background, dark solid text for guaranteed readability */
+.paper-input, .paper-select{
+  background:#efe3c4;
+  border:1px solid var(--ember);
+  color:#1c1208;
+  padding:10px 12px;
+  font-family:'Cormorant Garamond',serif;
+  font-size:16px;
+  border-radius:2px;
+  outline:none;
+}
+.paper-input{ font-weight:600; }
+.paper-input::placeholder{ color:#6b5b3f; opacity:1;}
+.paper-input:focus, .paper-select:focus{ border-color:var(--ember-bright); box-shadow:0 0 14px rgba(201,124,44,.35);}
+.status-badge{ font-family:'JetBrains Mono',monospace; font-size:10px; letter-spacing:.08em; padding:5px 9px; border-radius:2px; text-transform:uppercase;}
+.status-locked{ color:var(--ash); border:1px solid var(--ash-dim);}
+.status-rules{ color:var(--ember); border:1px solid var(--ember);}
+.status-active{ color:#000; background:var(--ember-bright); animation: flashOnce 1.2s ease;}
+.status-done{ color:var(--green-ok); border:1px solid var(--green-ok);}
+@keyframes flashOnce{ 0%{box-shadow:0 0 0 rgba(240,168,72,0);} 30%{box-shadow:0 0 24px rgba(240,168,72,.9);} 100%{box-shadow:0 0 0 rgba(240,168,72,0);} }
+
+.rules-block{ border-left:2px solid var(--ember); padding-left:16px; margin-bottom:24px; font-size:16px; line-height:1.6; color:var(--parchment);}
+.live-block{ border:1px solid var(--ember); padding:18px; border-radius:2px; background:rgba(201,124,44,0.04);}
+.live-tag{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ember-bright); letter-spacing:.1em; margin-bottom:14px;}
+.chat-log{ max-height:220px; overflow-y:auto; border:1px solid var(--ash-dim); padding:10px; margin-bottom:10px; font-size:14px;}
+.chat-msg{ margin-bottom:6px;}
+.chat-msg b{ color:var(--ember-bright);}
+.chat-row{ display:flex; gap:8px;}
+.chat-row input{ flex:1; background:rgba(255,255,255,0.02); border:1px solid var(--ash-dim); color:var(--parchment); padding:9px; font-family:'Cormorant Garamond',serif; font-size:15px;}
+.chat-row button, .action-btn{
+  background:transparent; border:1.5px solid var(--ember); color:var(--ember-bright); padding:11px 18px;
+  cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.04em;
+  transition: background .3s, color .3s, box-shadow .3s, transform .15s;
+}
+.action-btn{ animation: pulseGlow 3.6s ease-in-out infinite; }
+.chat-row button:hover, .action-btn:hover{ background:var(--ember); color:#140c06; box-shadow:0 0 20px rgba(201,124,44,.5);}
+.chat-row button:active, .action-btn:active{ transform: scale(.96);}
+.tagger-line{ margin:12px 0; font-size:15px;}
+.tagger-line b{ color:var(--ember-bright);}
+.geo-list{ margin-top:10px; font-size:13px; color:var(--ash); font-family:'JetBrains Mono',monospace;}
+
+.modal-bg{ position:fixed; inset:0; background:rgba(4,3,2,0.85); z-index:40; display:none; align-items:center; justify-content:center; padding:20px;}
+.modal-bg.show{ display:flex; animation: fadeUp .3s ease;}
+.modal-box{ background:var(--bg-2); border:1px solid var(--ember); padding:26px; max-width:400px; width:100%; border-radius:2px; text-align:center;}
+.modal-box img{ width:80px; height:80px; border-radius:50%; object-fit:cover; margin-bottom:14px; border:1px solid var(--ember); filter: grayscale(.35) sepia(.35) contrast(1.08) brightness(.92);}
+.modal-close{ margin-top:16px; background:transparent; border:1px solid var(--ash-dim); color:var(--ash); padding:8px 16px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11px;}
+
+.admin-pass{ max-width:320px; margin:60px auto; text-align:center;}
+.admin-pass input{ width:100%; background:transparent; border:1px solid var(--ash-dim); color:var(--parchment); padding:12px; text-align:center; margin-bottom:12px; font-family:'JetBrains Mono',monospace;}
+.shake-error{ border-color:#c96b5c !important; animation: shakeX .4s ease; }
+@keyframes shakeX{ 0%,100%{transform:translateX(0);} 20%{transform:translateX(-8px);} 40%{transform:translateX(8px);} 60%{transform:translateX(-5px);} 80%{transform:translateX(5px);} }
+.admin-ep-row{ border:1px solid var(--ash-dim); padding:14px; margin-bottom:10px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between;}
+.admin-ep-row select, .admin-ep-row input{ background:rgba(255,255,255,0.03); border:1px solid var(--ash-dim); color:var(--parchment); padding:6px 8px; font-family:'JetBrains Mono',monospace; font-size:12px;}
+.admin-ep-block{ border:1px solid var(--ash-dim); padding:14px; margin-bottom:14px; border-radius:2px;}
+.admin-ep-block .row1{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; margin-bottom:10px;}
+.admin-ep-block input[type=text], .admin-ep-block textarea{ display:block; width:100%; margin-bottom:8px; font-family:'Cormorant Garamond',serif;}
+.admin-ep-block textarea{ min-height:72px; resize:vertical;}
+
+/* light theme toggle for admin panel */
+#admin-content.admin-light{ background:#f3ead2; color:#241708; padding:18px; border-radius:4px;}
+#admin-content.admin-light .section-title{ color:#8a4a12; text-shadow:none;}
+#admin-content.admin-light .admin-ep-block, #admin-content.admin-light .admin-ep-row{ border-color:#c9a876; background:rgba(0,0,0,0.03); color:#241708;}
+#admin-content.admin-light .small-btn{ color:#5a3a1c; border-color:#c9a876;}
+#admin-content.admin-light .small-btn:hover{ background:#c9a876; color:#241708;}
+#admin-content.admin-light .empty-state{ color:#8a7a5c;}
+#admin-content.admin-light .status-badge.status-locked{ color:#8a7a5c; border-color:#c9a876;}
+.admin-pts-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:20px;}
+.small-btn{ background:transparent; border:1px solid var(--ash-dim); color:var(--ash); padding:6px 10px; cursor:pointer; font-family:'JetBrains Mono',monospace; font-size:11px;}
+.small-btn:hover{ border-color:var(--ember); color:var(--ember-bright);}
+.danger{ border-color:var(--rust); color:#c96b5c;}
+.danger:hover{ background:var(--rust); color:#fff;}
+
+.profile-hero{ text-align:center; margin-bottom:30px;}
+.profile-hero img{ width:100px; height:100px; border-radius:50%; object-fit:cover; border:1px solid var(--ember); margin-bottom:14px; filter: grayscale(.35) sepia(.35) contrast(1.08) brightness(.92);}
+.profile-hero .noph{ width:100px; height:100px; border-radius:50%; margin:0 auto 14px; background:var(--ash-dim); display:flex; align-items:center; justify-content:center; font-family:'Cinzel',serif; font-size:32px;}
+.badge{ display:inline-block; border:1px solid var(--ember); color:var(--ember-bright); font-family:'JetBrains Mono',monospace; font-size:11px; padding:5px 10px; margin:4px; border-radius:2px;}
+
+.empty-state{ color:var(--ash); font-size:15px; padding:20px 0; text-align:center; font-style:italic;}
+
+/* ---------- prize vault ---------- */
+.vault-wrap{ text-align:center; padding:20px 20px 40px;}
+.vault-stage{ position:relative; width:240px; height:260px; margin:0 auto 26px; overflow:visible;}
+.vault-svg{ width:240px; height:240px; filter: drop-shadow(0 10px 26px rgba(0,0,0,.6));}
+.coin-field{ position:absolute; top:0; left:0; width:100%; height:100%; overflow:hidden; pointer-events:none;}
+.coin{
+  position:absolute; top:-16px; width:13px; height:13px; border-radius:50%;
+  background: radial-gradient(circle at 32% 30%, #fff1c4, #e0a53e 55%, #8a5a12 100%);
+  box-shadow:0 0 8px rgba(245,180,100,.55);
+  animation-name: coinFall; animation-timing-function: cubic-bezier(.4,0,.6,1); animation-iteration-count: infinite;
+}
+@keyframes coinFall{
+  0%{ transform:translateY(0) rotate(0deg); opacity:0;}
+  8%{ opacity:1;}
+  85%{ opacity:1;}
+  100%{ transform:translateY(230px) rotate(340deg); opacity:0;}
+}
+.prize-amount{
+  font-family:'Cinzel',serif; font-weight:900; font-size:clamp(32px,7vw,52px);
+  color:var(--ember-bright); text-shadow:0 0 30px rgba(245,180,100,.5); margin-top:4px;
+}
+.prize-label{ font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.12em; color:var(--ash); text-transform:uppercase; margin-top:6px;}
+.prize-sub{ margin-top:18px; color:var(--ash); font-size:14px; max-width:420px; margin-left:auto; margin-right:auto;}
+
+/* ---------- events cards (reuse ep-card look) ---------- */
+.event-card{
+  border:1px solid var(--ash-dim); padding:16px 18px; margin-bottom:12px; border-radius:2px;
+  cursor:pointer; display:flex; justify-content:space-between; align-items:center;
+  opacity:0; transform:translateY(10px); animation: cardIn .5s ease forwards;
+  transition: border-color .25s;
+}
+.event-card:hover{ border-color:var(--ember);}
+.event-card.closed{ opacity:.55; cursor:not-allowed;}
+.event-card .evname{ font-family:'Cinzel',serif; font-size:16px;}
+.event-card .evdesc{ font-size:13px; color:var(--ash); margin-top:4px; max-width:400px;}
+.leader-banner{
+  border:1px solid var(--ember-bright); padding:16px; margin-bottom:18px; border-radius:2px;
+  background:rgba(201,124,44,.08); text-align:center; font-family:'Cinzel',serif; font-size:16px;
+  color:var(--ember-bright); animation: pulseGlow 2.4s ease-in-out infinite;
+}
+.rules-honest{ border-left:2px solid var(--ash-dim); padding-left:16px; margin:16px 0; font-size:14px; color:var(--ash);}
+
+/* ---------- points achievement-style toast ---------- */
+#toast-layer{
+  position:fixed; top:0; left:0; right:0; z-index:70;
+  display:flex; flex-direction:column; align-items:center; pointer-events:none; padding-top:14px;
+}
+.points-toast{
+  margin-top:10px; background:linear-gradient(135deg,#1c1208,#2a1a0f);
+  border:1px solid var(--ember-bright); padding:14px 24px; border-radius:4px;
+  display:flex; align-items:center; gap:14px;
+  box-shadow:0 10px 34px rgba(0,0,0,.6), 0 0 34px rgba(245,180,100,.35);
+  transform:translateY(-140%); opacity:0;
+  animation: toastIn .7s cubic-bezier(.2,.85,.25,1.3) forwards, toastOut .6s ease forwards 3.4s;
+  max-width:90vw;
+}
+.points-toast .icon{ font-size:28px; filter: grayscale(.3) sepia(.5) saturate(1.6);}
+.points-toast .txt{ font-family:'Cormorant Garamond',serif; font-size:16px; color:var(--parchment);}
+.points-toast .txt b{ color:var(--ember-bright);}
+@keyframes toastIn{ to{ transform:translateY(0); opacity:1;} }
+@keyframes toastOut{ to{ transform:translateY(-140%); opacity:0;} }
+
+/* ---------- global countdown banner ---------- */
+#global-countdown-banner{
+  display:none; position:fixed; top:0; left:0; right:0; z-index:55;
+  background:linear-gradient(90deg,#c9602c,#f5b464,#c9602c);
+  color:#140c06; font-family:'Cinzel',serif; font-weight:700; letter-spacing:.06em;
+  text-align:center; padding:11px; cursor:pointer; font-size:14px;
+  animation: bannerPulse 1s ease-in-out infinite;
+}
+#save-warning-banner{
+  display:none; position:fixed; top:0; left:0; right:0; z-index:56;
+  background:linear-gradient(90deg,#7a2e1e,#c96b5c,#7a2e1e);
+  color:#fff; font-family:'JetBrains Mono',monospace; letter-spacing:.03em;
+  text-align:center; padding:10px 14px; font-size:12px;
+}
+@keyframes bannerPulse{ 50%{ filter:brightness(1.18);} }
+
+/* ---------- fullscreen countdown inside an event ---------- */
+.countdown-wrap{ text-align:center; padding:60px 20px;}
+.countdown-num{
+  font-family:'Cinzel',serif; font-weight:900; font-size:clamp(64px,18vw,140px);
+  color:var(--ember-bright); text-shadow:0 0 50px rgba(245,180,100,.7);
+  animation: countdownPulse 1s ease-in-out infinite;
+}
+@keyframes countdownPulse{ 0%,100%{ transform:scale(1);} 50%{ transform:scale(1.08);} }
+.countdown-label{ margin-top:10px; color:var(--ash); font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.1em; text-transform:uppercase;}
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration:.01ms !important; animation-iteration-count:1 !important; }
+}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+<canvas id="burn-canvas"></canvas>
+<div class="vignette" id="vignette-el"></div>
+<div id="ash-layer"></div>
+<div id="burn-transition"></div>
+<div id="shock-ring"></div>
+<div id="toast-layer"></div>
+<div id="global-countdown-banner"></div>
+<div id="save-warning-banner"></div>
+
+<!-- WELCOME SCREEN -->
+<div id="welcome">
+  <div class="title-wrap" id="title-wrap"></div>
+  <div class="subtitle">каждую неделю город становится площадкой. каждый эпизод меняет счёт.</div>
+  <div class="reg-box">
+    <input type="text" id="name-input" class="paper-input" placeholder="Введи своё имя" maxlength="24" autocomplete="off">
+    <input type="password" id="pass-input" class="paper-input" placeholder="Придумай пароль" maxlength="32" autocomplete="off" style="margin-top:10px;">
+    <div class="photo-row">
+      <label class="photo-frame" id="photo-frame" for="photo-input">
+        <span id="photo-placeholder">＋</span>
+        <img id="photo-preview">
+      </label>
+      <input type="file" id="photo-input" accept="image/*" style="display:none">
+      <div class="photo-hint">нажми на кружок, чтобы добавить фото</div>
+    </div>
+    <div id="reg-error" class="reg-error"></div>
+    <button class="enter-btn" id="enter-btn">Войти в игру</button>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <header>
+    <div class="logo">EPISODE</div>
+    <div class="mini-lb" id="mini-lb"></div>
+    <nav id="main-nav">
+      <button data-view="home" class="active">Главная</button>
+      <button data-view="players">Игроки</button>
+      <button data-view="episodes">Главы</button>
+      <button data-view="events">События</button>
+      <button data-view="prize">Выигрыш</button>
+      <button data-view="profile">Профиль</button>
+      <button data-view="admin">Админка</button>
+    </nav>
+    <button id="logout-btn" class="small-btn" title="Выйти из аккаунта">Выйти</button>
+  </header>
+
+  <main>
+    <div class="view active" id="view-home">
+      <div id="home-banner"></div>
+      <h2 class="section-title">Общий счёт</h2>
+      <table class="lb"><thead><tr><th>#</th><th>Игрок</th><th style="text-align:right">Баллы</th></tr></thead><tbody id="lb-body"></tbody></table>
+      <div class="event-feed">
+        <h2 class="section-title" style="margin-top:30px;">Последние события</h2>
+        <div id="event-list"></div>
+      </div>
+    </div>
+
+    <div class="view" id="view-players">
+      <h2 class="section-title">Игроки</h2>
+      <div class="grid-cards" id="players-grid"></div>
+    </div>
+
+    <div class="view" id="view-episodes">
+      <h2 class="section-title">Главы</h2>
+      <div id="episodes-list"></div>
+    </div>
+
+    <div class="view" id="view-episode-detail">
+      <div id="episode-detail-content"></div>
+    </div>
+
+    <div class="view" id="view-events">
+      <h2 class="section-title">События</h2>
+      <div class="empty-state" style="font-style:normal; margin-bottom:16px;">Живые события с ведущим, который передаёт роль дальше по цепочке в чате.</div>
+      <div id="events-list"></div>
+    </div>
+
+    <div class="view" id="view-event-detail">
+      <div id="event-detail-content"></div>
+    </div>
+
+    <div class="view" id="view-prize">
+      <h2 class="section-title">Общий банк</h2>
+      <div id="prize-content"></div>
+    </div>
+
+    <div class="view" id="view-profile">
+      <div id="profile-content"></div>
+    </div>
+
+    <div class="view" id="view-admin">
+      <div id="admin-content"></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal-box" id="modal-box"></div>
+</div>
+
+<script>
+/* ============ SUPABASE CONFIG — заполни своими значениями из шага 2 инструкции ============ */
+const SUPABASE_URL = "https://hzjsnlklcnjcaszyrgcg.supabase.co/rest/v1/";      // например: https://abcxyz.supabase.co
+const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";    // "anon public" ключ из Settings → API
+
+/* ============ CONSTANTS ============ */
+const ADMIN_PASSWORD = "454512";
+const EPISODES = [
+  {id:1, name:"Городские Салки", icon:"🏃", rules:"Один водящий стартует и должен найти и осалить любого участника по городу в заданных границах. Осалённый сам становится водящим. Нельзя прятаться в закрытых помещениях дольше 5 минут. Побеждает тот, кого ни разу не осалили, или тот, кто был водящим меньше всего."},
+  {id:2, name:"Охота за метками", icon:"🎯", rules:"По городу спрятаны 10-15 меток. Подсказки публикуются в чат постепенно. Каждая найденная метка — баллы, фотоподтверждение обязательно. Побеждает нашедший больше всех к концу времени."},
+  {id:3, name:"Тайный агент", icon:"🎭", rules:"Каждому тайно назначается цель. «Устранение» — личная встреча с кодовой фразой/предметом и подтверждением. После устранения цели ты получаешь её цель. Победитель — выживший дольше всех или устранивший больше всех."},
+  {id:4, name:"Ночной дозор", icon:"🚩", rules:"Командный захват флага в парке/лесу. Пойманного на чужой территории отправляют в плен, освободить может свой игрок. Побеждает команда, забравшая флаг или набравшая больше очков за раунды."},
+  {id:5, name:"Контрабанда", icon:"📦", rules:"Одна команда — перевозчики с грузом, идут по городу от точки к точке. Вторая — патрули, пытаются перехватить груз. Груз можно передавать между перевозчиками. Побеждает либо доставившая груз команда, либо перехватившие патрули."}
+];
+const CHAPTER_WORD = "Глава";
+
+let state = { players:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:false, currentEpisode:null, chatPoll:null, pendingSave:false };
+
+function getEpisodeMeta(id){
+  const base = EPISODES.find(e=> e.id === Number(id));
+  const over = state.episodeOverrides[id] || {};
+  return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules };
+}
+
+/* ============ STORAGE HELPERS (Supabase-backed) ============ */
+/*
+  Shared game data (players, episodes, chat, etc.) lives in one Supabase table:
+    app_storage(key text primary key, value jsonb, updated_at timestamptz)
+  Personal "who am I on this device" data uses plain localStorage — this is
+  real hosting outside Claude's artifact sandbox, so localStorage works normally here.
+*/
+const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_URL.indexOf('YOUR_') === -1)
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+async function sGet(key, fallback){
+  if(!sbClient) return fallback;
+  try{
+    const { data, error } = await sbClient.from('app_storage').select('value').eq('key', key).maybeSingle();
+    if(error || !data) return fallback;
+    return data.value;
+  } catch(e){ return fallback; }
+}
+async function sSet(key, value, attempt=1){
+  if(!sbClient) return false;
+  try{
+    const { error } = await sbClient.from('app_storage').upsert({ key, value, updated_at: new Date().toISOString() });
+    if(error) throw error;
+    return true;
+  } catch(e){
+    if(attempt < 3){
+      await new Promise(r=> setTimeout(r, 400*attempt));
+      return sSet(key, value, attempt+1);
+    }
+    return false;
+  }
+}
+/* personal (per-device) storage — plain localStorage, works fine on real hosting */
+async function pGet(key, fallback){
+  try{ const v = localStorage.getItem('episode_'+key); return v !== null ? JSON.parse(v) : fallback; }
+  catch(e){ return fallback; }
+}
+async function pSet(key, value){
+  try{ localStorage.setItem('episode_'+key, JSON.stringify(value)); return true; }
+  catch(e){ return false; }
+}
+
+/* Resize/compress a photo before storing — avoids huge base64 payloads breaking storage writes */
+function compressImage(dataUrl, maxDim=220, quality=0.82){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      let { width, height } = img;
+      if(width > height){ if(width > maxDim){ height = Math.round(height*maxDim/width); width = maxDim; } }
+      else{ if(height > maxDim){ width = Math.round(width*maxDim/height); height = maxDim; } }
+      const canvas = document.createElement('canvas');
+      canvas.width = width; canvas.height = height;
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = ()=> resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
+/* ============ WELCOME ANIMATION ============ */
+function buildTitle(){
+  const word = "EPISODE";
+  const wrap = document.getElementById('title-wrap');
+  [...word].forEach((ch,i)=>{
+    const span = document.createElement('span');
+    span.textContent = ch;
+    span.style.setProperty('--d', (i*0.22)+"s");
+    wrap.appendChild(span);
+  });
+}
+function spawnAsh(){
+  const layer = document.getElementById('ash-layer');
+  const p = document.createElement('div');
+  const size = 2 + Math.random()*4;
+  p.className = 'ash-particle';
+  p.style.left = (Math.random()*100)+'vw';
+  p.style.width = size+'px'; p.style.height = size+'px';
+  p.style.setProperty('--drift', (Math.random()*90-45)+'px');
+  const dur = 11 + Math.random()*10;
+  p.style.animationDuration = dur+'s';
+  layer.appendChild(p);
+  setTimeout(()=>p.remove(), dur*1000+200);
+}
+let ashIntervalId = setInterval(spawnAsh, 340);
+
+/* ============ BURNING PAPER CANVAS (whole sheet, not just edges) — WELCOME SCREEN ONLY ============ */
+let burnActive = true;
+let burnSpawnIntervalId = null;
+function initBurnCanvas(){
+  const canvas = document.getElementById('burn-canvas');
+  const ctx = canvas.getContext('2d');
+  function resize(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+  resize();
+  window.addEventListener('resize', resize);
+
+  const points = [];
+  const MAX_POINTS = 18;
+
+  function spawnPoint(){
+    if(points.length >= MAX_POINTS) return;
+    points.push({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      r: 1,
+      maxR: 16 + Math.random()*76,
+      speed: 0.08 + Math.random()*0.22,
+      settled: false,
+      flicker: Math.random()*Math.PI*2
+    });
+  }
+  for(let i=0;i<5;i++) spawnPoint();
+  burnSpawnIntervalId = setInterval(spawnPoint, 3400);
+
+  function tick(){
+    if(!burnActive) return;
+    ctx.clearRect(0,0,canvas.width, canvas.height);
+    const t = Date.now()/500;
+    points.forEach(p=>{
+      if(!p.settled){
+        p.r += p.speed;
+        if(p.r >= p.maxR){ p.r = p.maxR; p.settled = true; }
+      }
+      const glow = p.settled
+        ? 0.14 + Math.sin(t + p.flicker)*0.05
+        : 0.45 + Math.sin(t*2.2 + p.flicker)*0.14;
+
+      // advancing flame-colored rim, where the "fire" is eating the paper
+      const rim = ctx.createRadialGradient(p.x,p.y,Math.max(p.r*0.7,1),p.x,p.y,p.r*1.3);
+      rim.addColorStop(0, `rgba(245,180,100,${glow})`);
+      rim.addColorStop(0.5, `rgba(150,64,20,${glow*0.55})`);
+      rim.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = rim;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r*1.3,0,Math.PI*2); ctx.fill();
+
+      // charred hole eating into the "page"
+      const hole = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
+      hole.addColorStop(0, 'rgba(4,3,2,0.9)');
+      hole.addColorStop(1, 'rgba(10,6,3,0)');
+      ctx.fillStyle = hole;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
+    });
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+initBurnCanvas();
+
+/* Stops all welcome-screen decorative effects (ash, burning canvas, vignette) once the user enters the main site */
+function stopWelcomeEffects(){
+  if(ashIntervalId){ clearInterval(ashIntervalId); ashIntervalId = null; }
+  const ashLayer = document.getElementById('ash-layer');
+  ashLayer.innerHTML = '';
+  ashLayer.style.display = 'none';
+
+  burnActive = false;
+  if(burnSpawnIntervalId){ clearInterval(burnSpawnIntervalId); burnSpawnIntervalId = null; }
+  const canvas = document.getElementById('burn-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+  canvas.style.display = 'none';
+
+  document.getElementById('vignette-el').style.display = 'none';
+}
+
+/* ============ REGISTRATION ============ */
+let photoData = null;
+document.getElementById('photo-input').addEventListener('change', (e)=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    const compressed = await compressImage(reader.result, 220, 0.82);
+    photoData = compressed;
+    const prev = document.getElementById('photo-preview');
+    const placeholder = document.getElementById('photo-placeholder');
+    const frame = document.getElementById('photo-frame');
+    prev.src = photoData; prev.style.display='block';
+    placeholder.style.display = 'none';
+    frame.classList.add('has-photo');
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById('enter-btn').addEventListener('click', async ()=>{
+  const nameInput = document.getElementById('name-input');
+  const passInput = document.getElementById('pass-input');
+  const errorEl = document.getElementById('reg-error');
+  const btn = document.getElementById('enter-btn');
+  const name = nameInput.value.trim();
+  const pass = passInput.value.trim();
+  errorEl.textContent = '';
+  nameInput.style.borderColor = ''; passInput.style.borderColor = '';
+
+  if(!name){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи имя, чтобы войти'; return; }
+  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Придумай пароль'; return; }
+
+  btn.disabled = true;
+  const originalBtnText = btn.textContent;
+  btn.textContent = 'Сохраняю...';
+
+  const players = await sGet('players', []);
+  const existing = players.find(p => p.name.toLowerCase() === name.toLowerCase());
+
+  if(existing){
+    if(existing.password === pass){
+      if(photoData) existing.photo = photoData;
+      const ok = await sSet('players', players);
+      btn.disabled = false; btn.textContent = originalBtnText;
+      if(!ok){ state.pendingSave = true; showSaveWarning(); }
+      state.me = existing;
+      enterApp();
+    } else {
+      btn.disabled = false; btn.textContent = originalBtnText;
+      errorEl.textContent = 'Это имя уже занято. Введи правильный пароль этого игрока, чтобы войти под ним.';
+      passInput.style.borderColor = '#c96b5c';
+    }
+    return;
+  }
+
+  let counter = await sGet('player_counter', 0);
+  counter = counter + 1;
+  const num = String(counter).padStart(2,'0');
+  const newPlayer = { id: 'p'+Date.now()+Math.floor(Math.random()*999), name, password: pass, number:num, photo: photoData, points:0, achievements:[], joinedAt: Date.now() };
+  players.push(newPlayer);
+
+  const savedPlayers = await sSet('players', players);
+  if(!savedPlayers){
+    state.pendingSave = true;
+    showSaveWarning();
+  } else {
+    await sSet('player_counter', counter);
+    await pushEvent(`${name} присоединился к игре под номером ${num}`);
+  }
+
+  state.me = newPlayer;
+  btn.disabled = false; btn.textContent = originalBtnText;
+  enterApp();
+});
+
+function enterApp(){
+  const bt = document.getElementById('burn-transition');
+  const ring = document.getElementById('shock-ring');
+  bt.classList.add('play');
+  ring.classList.add('play');
+  pSet('my_player_id', state.me.id);
+  setTimeout(async ()=>{
+    document.getElementById('welcome').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    stopWelcomeEffects();
+    await refreshAll();
+    startBackgroundPollers();
+  }, 750);
+  setTimeout(()=>{ bt.classList.remove('play'); ring.classList.remove('play'); }, 1800);
+}
+
+/* ============ EVENTS FEED ============ */
+async function pushEvent(text){
+  const events = await sGet('events', []);
+  events.unshift({ text, ts: Date.now() });
+  await sSet('events', events.slice(0,30));
+}
+
+/* ============ POINTS (with achievement-style toast) ============ */
+async function applyPoints(playerId, delta, reason){
+  const players = await sGet('players', []);
+  const p = players.find(x=>x.id===playerId);
+  if(!p) return null;
+  p.points = (p.points||0) + delta;
+  if(reason) p.achievements = [...(p.achievements||[]), reason];
+  await sSet('players', players);
+  await pushEvent(`${p.name} ${delta>=0?'получил':'потерял'} ${Math.abs(delta)} балл(ов)${reason? ' — '+reason:''}`);
+  state.players = players;
+  lastPointsSnapshot[p.id] = p.points;
+  renderHeader();
+  showPointsToast(p.name, delta, reason);
+  return p;
+}
+
+function showPointsToast(name, delta, reason){
+  const layer = document.getElementById('toast-layer');
+  if(!layer) return;
+  const el = document.createElement('div');
+  el.className = 'points-toast';
+  const icon = delta >= 0 ? '🏆' : '⚠️';
+  const word = Math.abs(delta) === 1 ? 'балл' : (Math.abs(delta) < 5 ? 'балла' : 'баллов');
+  el.innerHTML = `<span class="icon">${icon}</span><span class="txt"><b>${escapeHtml(name)}</b> ${delta>=0?'получил(а)':'потерял(а)'} <b>${Math.abs(delta)}</b> ${word}${reason? ' — '+escapeHtml(reason):''}</span>`;
+  layer.appendChild(el);
+  setTimeout(()=> el.remove(), 4200);
+}
+
+/* ============ BACKGROUND POLLERS: points diff toasts + global countdown banner ============ */
+let lastPointsSnapshot = {};
+let pollersStarted = false;
+function startBackgroundPollers(){
+  if(pollersStarted) return;
+  pollersStarted = true;
+  state.players.forEach(p=> lastPointsSnapshot[p.id] = p.points);
+  setInterval(async ()=>{
+    if(document.getElementById('app').style.display === 'none') return;
+    const players = await sGet('players', []);
+    players.forEach(p=>{
+      if(lastPointsSnapshot[p.id] !== undefined && lastPointsSnapshot[p.id] !== p.points){
+        showPointsToast(p.name, p.points - lastPointsSnapshot[p.id]);
+      }
+      lastPointsSnapshot[p.id] = p.points;
+    });
+    state.players = players;
+    if(document.getElementById('view-home').classList.contains('active')) renderHeader();
+  }, 6000);
+  setInterval(tickGlobalCountdownDisplay, 1000);
+  setInterval(fetchActiveCountdown, 5000);
+  fetchActiveCountdown();
+  setInterval(retryPendingSave, 12000);
+}
+
+let cachedActiveCountdownEvent = null;
+async function fetchActiveCountdown(){
+  const events = await sGet('custom_events', []);
+  cachedActiveCountdownEvent = events.find(e=> e.countdownEnd && Date.now() < e.countdownEnd) || null;
+}
+function tickGlobalCountdownDisplay(){
+  const banner = document.getElementById('global-countdown-banner');
+  if(cachedActiveCountdownEvent && Date.now() < cachedActiveCountdownEvent.countdownEnd){
+    const secs = Math.max(0, Math.ceil((cachedActiveCountdownEvent.countdownEnd - Date.now())/1000));
+    banner.textContent = `⏱ «${cachedActiveCountdownEvent.title}» начнётся через ${secs} сек — жми, чтобы перейти`;
+    banner.style.display = 'block';
+    banner.onclick = ()=>{ const ev = cachedActiveCountdownEvent; showView('events'); openCustomEvent(ev.id); };
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+/* Shown when the server rejects a write (e.g. temporary storage outage) — user keeps playing locally while we retry in background */
+function showSaveWarning(){
+  const el = document.getElementById('save-warning-banner');
+  el.textContent = '⚠ Связь с сервером нестабильна — твой профиль ещё не подтверждён. Сайт пытается сохранить его в фоне, не закрывай страницу.';
+  el.style.display = 'block';
+}
+async function retryPendingSave(){
+  if(!state.pendingSave || !state.me) return;
+  const players = await sGet('players', null);
+  if(players === null) return; // server still unreachable, try again next tick
+  const exists = players.find(p=> p.id === state.me.id);
+  if(!exists) players.push(state.me);
+  const ok = await sSet('players', players);
+  if(ok){
+    state.pendingSave = false;
+    document.getElementById('save-warning-banner').style.display = 'none';
+    await pushEvent(`${state.me.name} — профиль синхронизирован после сбоя связи`);
+    state.players = players;
+    renderHeader();
+  }
+}
+
+/* ============ NAV ============ */
+document.getElementById('main-nav').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button');
+  if(!btn) return;
+  showView(btn.dataset.view);
+});
+function showView(name){
+  document.querySelectorAll('#main-nav button').forEach(b=> b.classList.toggle('active', b.dataset.view===name));
+  document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  if(state.chatPoll && name !== 'episode-detail' && name !== 'event-detail'){ clearInterval(state.chatPoll); state.chatPoll = null; }
+  if(name==='home') renderHome();
+  if(name==='players') renderPlayers();
+  if(name==='episodes') renderEpisodes();
+  if(name==='events') renderEventsList();
+  if(name==='prize') renderPrize();
+  if(name==='profile') renderProfile();
+  if(name==='admin') renderAdmin();
+}
+
+document.getElementById('logout-btn').addEventListener('click', async ()=>{
+  if(!confirm('Выйти из аккаунта на этом устройстве?')) return;
+  await pSet('my_player_id', null);
+  location.reload();
+});
+
+/* ============ DATA REFRESH ============ */
+async function refreshAll(){
+  state.players = await sGet('players', []);
+  state.episodes = await sGet('episodes', {});
+  state.episodeOverrides = await sGet('episode_overrides', {});
+  state.adminLight = await pGet('admin_theme_light', false);
+  renderHeader();
+  renderHome();
+}
+
+function renderHeader(){
+  const sorted = [...state.players].sort((a,b)=> b.points - a.points).slice(0,3);
+  const lb = document.getElementById('mini-lb');
+  lb.innerHTML = sorted.map((p,i)=> `<span>${i+1}. ${escapeHtml(p.name)} <b>${p.points}</b></span>`).join('') || '<span>пока нет данных</span>';
+}
+
+/* ============ HOME ============ */
+function activeEpisode(){
+  const base = EPISODES.find(e => (state.episodes[e.id]?.status) === 'active');
+  return base ? getEpisodeMeta(base.id) : null;
+}
+function renderHome(){
+  const banner = document.getElementById('home-banner');
+  const active = activeEpisode();
+  if(active){
+    banner.innerHTML = `<div class="banner-active" id="go-active-ep"><div class="tag">Идёт сейчас</div><div class="name">${escapeHtml(active.name)}</div></div>`;
+    document.getElementById('go-active-ep').addEventListener('click', ()=> openEpisode(active.id));
+  } else {
+    banner.innerHTML = '';
+  }
+  const sorted = [...state.players].sort((a,b)=> b.points - a.points);
+  const tbody = document.getElementById('lb-body');
+  tbody.innerHTML = sorted.map((p,i)=>{
+    const av = p.photo ? `<img class="avatar-sm" src="${p.photo}">` : `<span class="avatar-sm" style="display:inline-flex;align-items:center;justify-content:center;background:var(--ash-dim);">${escapeHtml(p.name[0]||'?')}</span>`;
+    return `<tr><td class="rank ${i===0?'top1':''}">${i+1}</td><td>${av}${escapeHtml(p.name)} <span class="mono" style="color:var(--ash);font-size:11px;">№${p.number}</span></td><td style="text-align:right" class="pts" data-target="${p.points}">0</td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="empty-state">Пока нет игроков</td></tr>';
+  animateCounts();
+
+  sGet('events', []).then(events=>{
+    const list = document.getElementById('event-list');
+    list.innerHTML = events.length ? events.map((e,i)=> `<div class="event-item" style="animation-delay:${i*0.05}s"><span class="ts mono">${timeAgo(e.ts)}</span>${escapeHtml(e.text)}</div>`).join('') : '<div class="empty-state">Событий пока нет</div>';
+  });
+}
+function animateCounts(){
+  document.querySelectorAll('.pts[data-target]').forEach(el=>{
+    const target = parseInt(el.dataset.target,10) || 0;
+    let cur = 0;
+    const step = Math.max(1, Math.ceil(target/24));
+    const t = setInterval(()=>{
+      cur += step;
+      if(cur >= target){ cur = target; clearInterval(t); }
+      el.textContent = cur;
+    }, 18);
+  });
+}
+
+/* ============ PLAYERS ============ */
+function renderPlayers(){
+  const grid = document.getElementById('players-grid');
+  const sorted = [...state.players].sort((a,b)=> b.points - a.points);
+  grid.innerHTML = sorted.map((p,i)=>{
+    const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
+    return `<div class="player-card" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
+  }).join('') || '<div class="empty-state">Пока нет игроков</div>';
+  grid.querySelectorAll('.player-card').forEach(c=> c.addEventListener('click', ()=> openProfileModal(c.dataset.id)));
+}
+function openProfileModal(id){
+  const p = state.players.find(x=>x.id===id);
+  if(!p) return;
+  const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph" style="width:80px;height:80px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;background:var(--ash-dim);font-family:'Cinzel',serif;font-size:26px;">${escapeHtml(p.name[0]||'?')}</div>`;
+  const badges = (p.achievements||[]).map(a=> `<span class="badge">${escapeHtml(a)}</span>`).join('') || '<div class="empty-state" style="padding:6px 0;">Ачивок пока нет</div>';
+  document.getElementById('modal-box').innerHTML = `${av}<div class="disp" style="font-size:19px;">${escapeHtml(p.name)}</div><div class="mono" style="color:var(--ash);font-size:12px;margin:6px 0 14px;">№${p.number} · ${p.points} баллов</div>${badges}<button class="modal-close" id="modal-close">Закрыть</button>`;
+  document.getElementById('modal-bg').classList.add('show');
+  document.getElementById('modal-close').addEventListener('click', ()=> document.getElementById('modal-bg').classList.remove('show'));
+}
+document.getElementById('modal-bg').addEventListener('click', (e)=>{ if(e.target.id==='modal-bg') e.target.classList.remove('show'); });
+
+/* ============ EPISODES ============ */
+function renderEpisodes(){
+  const list = document.getElementById('episodes-list');
+  list.innerHTML = EPISODES.map((base,i)=>{
+    const ep = getEpisodeMeta(base.id);
+    const st = state.episodes[ep.id]?.status || 'locked';
+    const label = {locked:'Закрыт', rules:'Правила открыты', active:'Идёт сейчас', done:'Завершена'}[st];
+    return `<div class="ep-card" style="animation-delay:${i*0.04}s" data-id="${ep.id}"><div style="display:flex; align-items:center; gap:14px;"><span class="ep-icon">${ep.icon}</span><div class="epname">${CHAPTER_WORD} ${ep.id}: ${escapeHtml(ep.name)}</div></div><div class="status-badge status-${st}">${label}</div></div>`;
+  }).join('');
+  list.querySelectorAll('.ep-card').forEach(c=> c.addEventListener('click', ()=>{
+    const st = state.episodes[c.dataset.id]?.status || 'locked';
+    if(st === 'locked' && !state.isAdmin){ return; }
+    openEpisode(parseInt(c.dataset.id,10));
+  }));
+}
+
+async function openEpisode(id){
+  state.currentEpisode = id;
+  state.episodes = await sGet('episodes', {});
+  state.episodeOverrides = await sGet('episode_overrides', {});
+  const ep = getEpisodeMeta(id);
+  const data = state.episodes[id] || { status:'locked', tagger:null };
+  document.querySelectorAll('#main-nav button').forEach(b=> b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
+  document.getElementById('view-episode-detail').classList.add('active');
+
+  let html = `<h2 class="section-title" style="display:flex; align-items:center; gap:14px;"><span class="ep-icon" style="font-size:30px;">${ep.icon}</span>${CHAPTER_WORD} ${id}: ${escapeHtml(ep.name)}</h2><div class="rules-block">${escapeHtml(ep.rules)}</div>`;
+
+  if(data.status === 'active'){
+    html += `<div class="live-block"><div class="live-tag">● В ЭФИРЕ</div>
+      <div class="tagger-line">Держит роль сейчас: <b id="tagger-name">—</b></div>
+      <button class="action-btn" id="pass-role-btn">Я передал роль</button>
+      <button class="action-btn" id="share-geo-btn" style="margin-left:8px;">Поделиться геолокацией</button>
+      <div class="geo-list" id="geo-list"></div>
+      <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат главы</h3>
+      <div class="chat-log" id="chat-log"></div>
+      <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
+      </div>`;
+  } else if(data.status === 'done'){
+    html += `<div class="empty-state">Глава завершена. Итоги учтены в общем счёте.</div>`;
+  } else if(data.status === 'locked'){
+    html += `<div class="empty-state">Глава пока закрыта.</div>`;
+  }
+  document.getElementById('episode-detail-content').innerHTML = html;
+
+  if(data.status === 'active'){
+    document.getElementById('tagger-name').textContent = data.tagger ? (state.players.find(p=>p.id===data.tagger)?.name || '—') : '—';
+    document.getElementById('pass-role-btn').addEventListener('click', async ()=>{
+      const eps = await sGet('episodes', {});
+      eps[id] = eps[id] || {};
+      eps[id].tagger = state.me.id;
+      await sSet('episodes', eps);
+      await pushEvent(`${state.me.name} принял роль в главе «${ep.name}»`);
+      openEpisode(id);
+    });
+    document.getElementById('share-geo-btn').addEventListener('click', ()=>{
+      if(!navigator.geolocation){ alert('Геолокация недоступна в этом браузере'); return; }
+      navigator.geolocation.getCurrentPosition(async (pos)=>{
+        const geo = await sGet('geo_ep'+id, {});
+        geo[state.me.id] = { name: state.me.name, lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() };
+        await sSet('geo_ep'+id, geo);
+        renderGeoList(id);
+      }, ()=> alert('Не удалось получить геолокацию — проверь разрешения браузера'));
+    });
+    renderGeoList(id);
+    loadChat(id);
+    document.getElementById('chat-send').addEventListener('click', ()=> sendChat(id));
+    document.getElementById('chat-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(id); });
+    if(state.chatPoll) clearInterval(state.chatPoll);
+    state.chatPoll = setInterval(()=> loadChat(id), 4500);
+  }
+}
+
+async function renderGeoList(id){
+  const geo = await sGet('geo_ep'+id, {});
+  const el = document.getElementById('geo-list');
+  if(!el) return;
+  const entries = Object.values(geo);
+  el.innerHTML = entries.length ? entries.map(g=> `${escapeHtml(g.name)} — координаты отправлены ${timeAgo(g.ts)}`).join('<br>') : 'Пока никто не поделился локацией';
+}
+
+async function loadChat(id){
+  const chat = await sGet('chat_ep'+id, []);
+  const log = document.getElementById('chat-log');
+  if(!log) return;
+  log.innerHTML = chat.map(m=> `<div class="chat-msg"><b>${escapeHtml(m.player)}:</b> ${escapeHtml(m.text)}</div>`).join('') || '<div class="empty-state" style="padding:6px 0;">Тишина...</div>';
+  log.scrollTop = log.scrollHeight;
+}
+async function sendChat(id){
+  const input = document.getElementById('chat-input');
+  const sendBtn = document.getElementById('chat-send');
+  const text = input.value.trim();
+  if(!text || sendBtn.disabled) return;
+  sendBtn.disabled = true;
+  const chat = await sGet('chat_ep'+id, []);
+  chat.push({ player: state.me.name, text, ts: Date.now() });
+  await sSet('chat_ep'+id, chat.slice(-50));
+  input.value = '';
+  await loadChat(id);
+  sendBtn.disabled = false;
+}
+
+/* ============ CUSTOM EVENTS (flexible admin-created live games) ============ */
+const HONEST_PLAY_RULES = "Честная игра: как только тебя выбрали — сразу сообщи в чат события, не отключай чат и не пропадай специально. Отрицать, что тебя выбрали, или мешать передаче роли — нечестно и не засчитывается.";
+
+async function renderEventsList(){
+  const list = document.getElementById('events-list');
+  const events = await sGet('custom_events', []);
+  const visible = state.isAdmin ? events : events.filter(e=> e.status==='open');
+  list.innerHTML = visible.length ? visible.map((e,i)=>{
+    const closed = e.status !== 'open';
+    return `<div class="event-card ${closed?'closed':''}" style="animation-delay:${i*0.05}s" data-id="${e.id}">
+      <div><div class="evname">${escapeHtml(e.title)}</div><div class="evdesc">${escapeHtml(e.description||'')}</div></div>
+      <div class="status-badge status-${closed?'locked':'active'}">${closed?'Закрыто':'Открыто'}</div>
+    </div>`;
+  }).join('') : '<div class="empty-state">Пока нет открытых событий</div>';
+  list.querySelectorAll('.event-card').forEach(c=>{
+    c.addEventListener('click', ()=>{
+      if(c.classList.contains('closed')) return;
+      openCustomEvent(c.dataset.id);
+    });
+  });
+}
+
+async function openCustomEvent(id){
+  document.querySelectorAll('#main-nav button').forEach(b=> b.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
+  document.getElementById('view-event-detail').classList.add('active');
+  await renderEventDetail(id);
+  if(state.chatPoll) clearInterval(state.chatPoll);
+  state.chatPoll = setInterval(()=> renderEventDetail(id, true), 4000);
+}
+
+async function renderEventDetail(id, quiet){
+  const events = await sGet('custom_events', []);
+  const ev = events.find(e=> e.id === id);
+  const content = document.getElementById('event-detail-content');
+  if(!ev){ content.innerHTML = '<div class="empty-state">Событие не найдено</div>'; return; }
+
+  const now = Date.now();
+  const counting = ev.countdownEnd && now < ev.countdownEnd;
+  const revealed = ev.leader && (!ev.countdownEnd || now >= ev.countdownEnd);
+
+  let html = `<h2 class="section-title">${escapeHtml(ev.title)}</h2>
+    <div class="rules-block">${escapeHtml(ev.description||'Правила уточнит организатор в чате.')}</div>
+    <div class="rules-honest">${HONEST_PLAY_RULES}</div>`;
+
+  if(counting){
+    const secs = Math.max(0, Math.ceil((ev.countdownEnd - now)/1000));
+    html += `<div class="countdown-wrap"><div class="countdown-num">${secs}</div><div class="countdown-label">до старта игры</div></div>`;
+  } else if(revealed){
+    const leaderPlayer = state.players.find(p=>p.id===ev.leader);
+    html += `<div class="leader-banner">Ведущий сейчас: ${leaderPlayer ? escapeHtml(leaderPlayer.name) : '—'}</div>`;
+    if(state.me.id === ev.leader){
+      const others = state.players.filter(p=> p.id !== state.me.id);
+      html += `<div class="live-block"><div class="live-tag">ТЫ ВЕДУЩИЙ — выбери следующего</div>
+        <select id="pick-target" class="paper-select" style="margin-bottom:10px; width:100%;">${others.map(p=> `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
+        <button class="action-btn" id="pick-btn">Осалить / передать роль</button></div>`;
+    }
+  } else if(state.isAdmin){
+    html += `<div class="live-block"><button class="action-btn" id="start-game-btn">Начать игру</button></div>`;
+  } else {
+    html += `<div class="empty-state">Ждём, когда организатор запустит игру...</div>`;
+  }
+
+  html += `<h3 style="margin-top:22px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат события</h3>
+    <div class="chat-log" id="chat-log"></div>
+    <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>`;
+
+  content.innerHTML = html;
+
+  if(counting){
+    const numEl = content.querySelector('.countdown-num');
+    const endTs = ev.countdownEnd;
+    const localTick = setInterval(()=>{
+      if(!document.body.contains(numEl)){ clearInterval(localTick); return; }
+      const s = Math.max(0, Math.ceil((endTs - Date.now())/1000));
+      numEl.textContent = s;
+      if(s <= 0) clearInterval(localTick);
+    }, 1000);
+  }
+
+  const chat = await sGet('chat_ev'+id, []);
+  document.getElementById('chat-log').innerHTML = chat.map(m=> `<div class="chat-msg"><b>${escapeHtml(m.player)}:</b> ${escapeHtml(m.text)}</div>`).join('') || '<div class="empty-state" style="padding:6px 0;">Тишина...</div>';
+  const logEl = document.getElementById('chat-log');
+  logEl.scrollTop = logEl.scrollHeight;
+
+  document.getElementById('chat-send')?.addEventListener('click', async (e)=>{
+    const sendBtn = e.currentTarget;
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if(!text || sendBtn.disabled) return;
+    sendBtn.disabled = true;
+    const c = await sGet('chat_ev'+id, []);
+    c.push({ player: state.me.name, text, ts: Date.now() });
+    await sSet('chat_ev'+id, c.slice(-50));
+    input.value = '';
+    await renderEventDetail(id, true);
+  });
+  document.getElementById('chat-input')?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') document.getElementById('chat-send').click(); });
+
+  document.getElementById('start-game-btn')?.addEventListener('click', async ()=>{
+    const evs = await sGet('custom_events', []);
+    const e = evs.find(x=>x.id===id);
+    if(!e || !state.players.length) return;
+    const randomPlayer = state.players[Math.floor(Math.random()*state.players.length)];
+    e.leader = randomPlayer.id;
+    e.countdownEnd = Date.now() + 10000;
+    await sSet('custom_events', evs);
+    const c = await sGet('chat_ev'+id, []);
+    c.push({ player: 'Система', text: `Организатор запустил игру «${e.title}» — отсчёт пошёл!`, ts: Date.now() });
+    await sSet('chat_ev'+id, c.slice(-50));
+    renderEventDetail(id);
+  });
+
+  document.getElementById('pick-btn')?.addEventListener('click', async ()=>{
+    const targetId = document.getElementById('pick-target').value;
+    const target = state.players.find(p=>p.id===targetId);
+    if(!target) return;
+    const evs = await sGet('custom_events', []);
+    const e = evs.find(x=>x.id===id);
+    if(!e) return;
+    e.leader = target.id;
+    e.countdownEnd = null;
+    await sSet('custom_events', evs);
+    const c = await sGet('chat_ev'+id, []);
+    c.push({ player: 'Система', text: `${state.me.name} выбрал(а) ${target.name} — теперь ${target.name} ведущий!`, ts: Date.now() });
+    await sSet('chat_ev'+id, c.slice(-50));
+    await pushEvent(`${state.me.name} передал(а) роль ведущего игроку ${target.name} в событии «${e.title}»`);
+    renderEventDetail(id);
+  });
+}
+
+/* ============ PRIZE VAULT ============ */
+async function renderPrize(){
+  const amount = await sGet('prize_pool', 0);
+  const content = document.getElementById('prize-content');
+  const coinCount = amount <= 0 ? 0 : Math.max(5, Math.min(36, 5 + Math.floor(amount/300)));
+  let coinsHtml = '';
+  for(let i=0;i<coinCount;i++){
+    const left = 20 + Math.random()*160;
+    const delay = (Math.random()*4).toFixed(2);
+    const dur = (2.2 + Math.random()*1.6).toFixed(2);
+    coinsHtml += `<div class="coin" style="left:${left}px; animation-delay:${delay}s; animation-duration:${dur}s;"></div>`;
+  }
+  content.innerHTML = `
+    <div class="vault-wrap">
+      <div class="vault-stage">
+        <div class="coin-field">${coinsHtml}</div>
+        <svg class="vault-svg" viewBox="0 0 200 200">
+          <rect x="10" y="10" width="180" height="180" rx="16" fill="#150e08" stroke="#c97c2c" stroke-width="4"/>
+          <rect x="22" y="22" width="156" height="156" rx="10" fill="none" stroke="#57504a" stroke-width="1.5"/>
+          <circle cx="100" cy="105" r="52" fill="#1c1208" stroke="#f5b464" stroke-width="3"/>
+          <circle cx="100" cy="105" r="38" fill="none" stroke="#7a5010" stroke-width="1"/>
+          ${Array.from({length:12}).map((_,i)=>{
+            const a = (i/12)*Math.PI*2; const x1=100+Math.sin(a)*44, y1=105-Math.cos(a)*44, x2=100+Math.sin(a)*52, y2=105-Math.cos(a)*52;
+            return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="#c97c2c" stroke-width="2"/>`;
+          }).join('')}
+          <circle cx="100" cy="105" r="7" fill="#f5b464"/>
+          <rect x="150" y="96" width="26" height="18" rx="4" fill="#c97c2c"/>
+          <rect x="30" y="34" width="30" height="8" rx="3" fill="#0a0806" stroke="#57504a" stroke-width="1"/>
+          <circle cx="24" cy="24" r="4" fill="#45403a"/><circle cx="176" cy="24" r="4" fill="#45403a"/>
+          <circle cx="24" cy="176" r="4" fill="#45403a"/><circle cx="176" cy="176" r="4" fill="#45403a"/>
+        </svg>
+      </div>
+      <div class="prize-amount">${amount.toLocaleString('ru-RU')} ₽</div>
+      <div class="prize-label">общий банк</div>
+      <div class="prize-sub">${amount>0 ? 'Каждый игрок вносит свой взнос — победитель по итогам сезона забирает весь банк.' : 'Банк пока пуст — взносы ещё не внесены.'}</div>
+    </div>`;
+}
+
+
+function renderProfile(){
+  const p = state.players.find(x=>x.id===state.me.id) || state.me;
+  const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
+  const badges = (p.achievements||[]).map(a=> `<span class="badge">${escapeHtml(a)}</span>`).join('') || '<div class="empty-state">Ачивок пока нет</div>';
+  document.getElementById('profile-content').innerHTML = `
+    <div class="profile-hero">${av}<div class="disp" style="font-size:22px;">${escapeHtml(p.name)}</div><div class="mono" style="color:var(--ash);font-size:12px;margin-top:6px;">№${p.number} · ${p.points} баллов</div></div>
+    <h2 class="section-title">Ачивки</h2>${badges}
+  `;
+}
+
+/* ============ ADMIN ============ */
+async function renderAdmin(){
+  const box = document.getElementById('admin-content');
+  if(!state.isAdmin){
+    box.innerHTML = `<div class="admin-pass"><div class="disp" style="margin-bottom:14px;">Доступ создателя</div><input type="password" class="paper-input" id="admin-pass-input" placeholder="Пароль" style="width:100%; text-align:center; margin-bottom:14px;"><button class="enter-btn" id="admin-pass-btn" style="animation:none;">Войти</button></div>`;
+    document.getElementById('admin-pass-btn').addEventListener('click', ()=>{
+      const input = document.getElementById('admin-pass-input');
+      if(input.value === ADMIN_PASSWORD){
+        state.isAdmin = true;
+        const bt = document.getElementById('burn-transition');
+        const ring = document.getElementById('shock-ring');
+        bt.classList.add('play'); ring.classList.add('play');
+        setTimeout(()=>{ bt.classList.remove('play'); ring.classList.remove('play'); }, 1400);
+        setTimeout(renderAdmin, 350);
+      } else {
+        input.classList.add('shake-error');
+        input.value = '';
+        input.placeholder = 'Неверный пароль';
+        setTimeout(()=> input.classList.remove('shake-error'), 500);
+      }
+    });
+    return;
+  }
+  let html = `<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:20px;">
+    <h2 class="section-title" style="margin-bottom:0;">Панель создателя</h2>
+    <button class="small-btn" id="admin-theme-toggle">${state.adminLight ? '🌙 Тёмная тема' : '☀ Светлая тема'}</button>
+  </div>`;
+  html += `<h2 class="section-title">Управление главами</h2>`;
+  EPISODES.forEach(base=>{
+    const meta = getEpisodeMeta(base.id);
+    const st = state.episodes[base.id]?.status || 'locked';
+    html += `<div class="admin-ep-block">
+      <div class="row1">
+        <div><span class="ep-icon" style="font-size:18px;">${meta.icon}</span> ${CHAPTER_WORD} ${base.id}</div>
+        <select data-ep="${base.id}" class="ep-status-select paper-select">
+          <option value="locked" ${st==='locked'?'selected':''}>Закрыт</option>
+          <option value="rules" ${st==='rules'?'selected':''}>Показать правила</option>
+          <option value="active" ${st==='active'?'selected':''}>Идёт сейчас</option>
+          <option value="done" ${st==='done'?'selected':''}>Завершена</option>
+        </select>
+      </div>
+      <input type="text" class="paper-input ep-name-input" data-ep="${base.id}" value="${escapeHtml(meta.name)}">
+      <textarea class="paper-input ep-rules-input" data-ep="${base.id}">${escapeHtml(meta.rules)}</textarea>
+      <button class="small-btn ep-save-btn" data-ep="${base.id}">Сохранить главу</button>
+    </div>`;
+  });
+  html += `<h2 class="section-title" style="margin-top:30px;">Общий банк</h2>
+    <div class="admin-ep-block">
+      <input type="number" class="paper-input" id="prize-input" placeholder="Сумма банка, ₽" style="width:200px;">
+      <button class="small-btn" id="prize-save" style="margin-top:10px;">Обновить банк</button>
+    </div>
+  `;
+  html += `<h2 class="section-title" style="margin-top:30px;">Управление событиями</h2>
+    <div class="admin-ep-block">
+      <input type="text" class="paper-input" id="new-event-title" placeholder="Название события">
+      <textarea class="paper-input" id="new-event-desc" placeholder="Описание / что за игра"></textarea>
+      <button class="small-btn" id="new-event-create">+ Создать событие</button>
+    </div>
+    <div id="admin-events-list"></div>
+  `;
+  html += `<h2 class="section-title" style="margin-top:30px;">Корректировка баллов</h2>
+    <div class="admin-pts-row">
+      <select id="pts-player" class="paper-select"></select>
+      <input type="number" id="pts-delta" class="paper-input" placeholder="+/- баллы" style="width:110px;">
+      <input type="text" id="pts-reason" class="paper-input" placeholder="За что (необязательно)" style="width:180px;">
+      <button class="small-btn" id="pts-apply">Применить</button>
+    </div>
+    <h2 class="section-title" style="margin-top:30px;">Игроки</h2>
+    <div id="admin-players-list"></div>
+  `;
+  box.innerHTML = html;
+  box.classList.toggle('admin-light', !!state.adminLight);
+
+  document.getElementById('admin-theme-toggle').addEventListener('click', async ()=>{
+    state.adminLight = !state.adminLight;
+    await pSet('admin_theme_light', state.adminLight);
+    renderAdmin();
+  });
+
+  box.querySelectorAll('.ep-status-select').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      const id = sel.dataset.ep;
+      const eps = await sGet('episodes', {});
+      eps[id] = eps[id] || {};
+      eps[id].status = sel.value;
+      await sSet('episodes', eps);
+      const meta = getEpisodeMeta(id);
+      await pushEvent(`Статус главы «${meta.name}» изменён на «${sel.options[sel.selectedIndex].text}»`);
+      state.episodes = eps;
+      renderHeader();
+    });
+  });
+
+  box.querySelectorAll('.ep-save-btn').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.dataset.ep;
+      const nameVal = box.querySelector(`.ep-name-input[data-ep="${id}"]`).value.trim();
+      const rulesVal = box.querySelector(`.ep-rules-input[data-ep="${id}"]`).value.trim();
+      const overrides = await sGet('episode_overrides', {});
+      overrides[id] = { name: nameVal, rules: rulesVal };
+      await sSet('episode_overrides', overrides);
+      state.episodeOverrides = overrides;
+      await pushEvent(`Глава ${id} отредактирована создателем`);
+      btn.textContent = 'Сохранено ✓';
+      setTimeout(()=>{ btn.textContent = 'Сохранить главу'; }, 1600);
+    });
+  });
+
+  document.getElementById('prize-input').value = await sGet('prize_pool', 0);
+  document.getElementById('prize-save').addEventListener('click', async ()=>{
+    const val = parseInt(document.getElementById('prize-input').value, 10) || 0;
+    await sSet('prize_pool', val);
+    await pushEvent(`Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
+    document.getElementById('prize-save').textContent = 'Сохранено ✓';
+    setTimeout(()=>{ document.getElementById('prize-save').textContent = 'Обновить банк'; }, 1500);
+  });
+
+  document.getElementById('new-event-create').addEventListener('click', async ()=>{
+    const title = document.getElementById('new-event-title').value.trim();
+    const desc = document.getElementById('new-event-desc').value.trim();
+    if(!title) return;
+    const events = await sGet('custom_events', []);
+    events.push({ id: 'ev'+Date.now(), title, description: desc, status:'closed', leader:null, countdownEnd:null, createdAt: Date.now() });
+    await sSet('custom_events', events);
+    await pushEvent(`Создано новое событие «${title}»`);
+    renderAdmin();
+  });
+  renderAdminEventsList();
+
+  const ptsSelect = document.getElementById('pts-player');
+  ptsSelect.innerHTML = state.players.map(p=> `<option value="${p.id}">${escapeHtml(p.name)} (№${p.number})</option>`).join('');
+  document.getElementById('pts-apply').addEventListener('click', async ()=>{
+    const pid = ptsSelect.value;
+    const delta = parseInt(document.getElementById('pts-delta').value,10);
+    const reason = document.getElementById('pts-reason').value.trim();
+    if(!pid || isNaN(delta)) return;
+    await applyPoints(pid, delta, reason);
+    document.getElementById('pts-delta').value=''; document.getElementById('pts-reason').value='';
+    renderAdminPlayersList();
+  });
+  renderAdminPlayersList();
+}
+
+async function renderAdminEventsList(){
+  const el = document.getElementById('admin-events-list');
+  if(!el) return;
+  const events = await sGet('custom_events', []);
+  el.innerHTML = events.length ? events.map(e=> `<div class="admin-ep-row">
+      <div>${escapeHtml(e.title)} <span class="status-badge status-${e.status==='open'?'active':'locked'}" style="margin-left:8px;">${e.status==='open'?'Открыто':'Закрыто'}</span></div>
+      <div style="display:flex; gap:6px;">
+        <button class="small-btn" data-toggle-ev="${e.id}">${e.status==='open' ? 'Закрыть' : 'Открыть'}</button>
+        <button class="small-btn danger" data-del-ev="${e.id}">Удалить</button>
+      </div>
+    </div>`).join('') : '<div class="empty-state">Пока нет созданных событий</div>';
+  el.querySelectorAll('[data-toggle-ev]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const events = await sGet('custom_events', []);
+    const ev = events.find(x=>x.id===btn.dataset.toggleEv);
+    if(!ev) return;
+    ev.status = ev.status==='open' ? 'closed' : 'open';
+    await sSet('custom_events', events);
+    await pushEvent(`Событие «${ev.title}» ${ev.status==='open'?'открыто':'закрыто'}`);
+    renderAdminEventsList();
+  }));
+  el.querySelectorAll('[data-del-ev]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(!confirm('Удалить событие?')) return;
+    const events = (await sGet('custom_events', [])).filter(x=>x.id!==btn.dataset.delEv);
+    await sSet('custom_events', events);
+    renderAdminEventsList();
+  }));
+}
+function renderAdminPlayersList(){
+  const el = document.getElementById('admin-players-list');
+  if(!el) return;
+  el.innerHTML = state.players.map(p=> `<div class="admin-ep-row"><div>${escapeHtml(p.name)} · №${p.number} · ${p.points} б.</div><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="small-btn" data-plus="${p.id}">+1</button><button class="small-btn" data-minus="${p.id}">−1</button><button class="small-btn" data-rename="${p.id}">✎ Имя</button><button class="small-btn danger" data-del="${p.id}">Удалить</button></div></div>`).join('') || '<div class="empty-state">Пока нет игроков</div>';
+  el.querySelectorAll('[data-plus]').forEach(btn=> btn.addEventListener('click', async ()=>{ await applyPoints(btn.dataset.plus, 1); renderAdminPlayersList(); }));
+  el.querySelectorAll('[data-minus]').forEach(btn=> btn.addEventListener('click', async ()=>{ await applyPoints(btn.dataset.minus, -1); renderAdminPlayersList(); }));
+  el.querySelectorAll('[data-rename]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const players = await sGet('players', []);
+    const p = players.find(x=>x.id===btn.dataset.rename);
+    if(!p) return;
+    const newName = prompt('Новое имя для игрока:', p.name);
+    if(!newName || !newName.trim()) return;
+    p.name = newName.trim();
+    await sSet('players', players);
+    await pushEvent(`Игрок переименован в ${p.name}`);
+    state.players = players;
+    renderHeader(); renderAdminPlayersList();
+  }));
+  el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(!confirm('Удалить игрока?')) return;
+    const players = (await sGet('players', [])).filter(p=>p.id!==btn.dataset.del);
+    await sSet('players', players);
+    state.players = players;
+    renderHeader(); renderAdminPlayersList();
+  }));
+}
+
+/* ============ UTIL ============ */
+function escapeHtml(s){ return String(s??'').replace(/[&<>"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function timeAgo(ts){
+  const s = Math.floor((Date.now()-ts)/1000);
+  if(s<60) return 'только что';
+  if(s<3600) return Math.floor(s/60)+' мин назад';
+  if(s<86400) return Math.floor(s/3600)+' ч назад';
+  return Math.floor(s/86400)+' дн назад';
+}
+
+/* ============ INIT ============ */
+(async function init(){
+  const savedId = await pGet('my_player_id', null);
+  if(savedId){
+    const players = await sGet('players', []);
+    const found = players.find(p=> p.id === savedId);
+    if(found){
+      state.me = found;
+      document.getElementById('welcome').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      stopWelcomeEffects();
+      await refreshAll();
+      startBackgroundPollers();
+      return;
+    }
+  }
+  buildTitle();
+})();
+</script>
+</body>
+</html>
