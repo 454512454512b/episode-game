@@ -154,6 +154,14 @@ body{
   50%{ box-shadow: 0 0 34px rgba(201,124,44,.7), inset 0 0 14px rgba(201,124,44,.15);}
 }
 .reg-error{ min-height:18px; margin-top:12px; font-size:13px; color:#ff9a85; letter-spacing:.02em;}
+.two-btn-row{ display:flex; flex-direction:column; gap:10px;}
+.two-btn-row .enter-btn{ margin-top:0;}
+.enter-btn-secondary{
+  border-color:var(--ash-dim); color:var(--ash); font-size:12px; padding:14px;
+  animation:none; box-shadow:none;
+}
+.enter-btn-secondary::before{ display:none;}
+.enter-btn-secondary:hover{ background:transparent; border-color:var(--ember); color:var(--ember-bright); letter-spacing:.16em;}
 
 /* burn transition overlay */
 #burn-transition{
@@ -463,7 +471,10 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
       <div class="photo-hint">нажми на кружок, чтобы добавить фото</div>
     </div>
     <div id="reg-error" class="reg-error"></div>
-    <button class="enter-btn" id="enter-btn">Войти в игру</button>
+    <div class="two-btn-row">
+      <button class="enter-btn" id="register-btn">Зарегистрироваться</button>
+      <button class="enter-btn enter-btn-secondary" id="login-btn">Уже есть аккаунт — войти</button>
+    </div>
   </div>
 </div>
 
@@ -575,10 +586,21 @@ const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_UR
   ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
-/* Deterministic "fake" email so people can sign in with just a nickname, while still using real Supabase Auth underneath */
+/* Deterministic "fake" email so people can sign in with just a nickname, while still using real Supabase Auth underneath.
+   Supabase requires a strictly ASCII/Latin email format — Cyrillic names must be transliterated first, not just "allowed through". */
+const CYRILLIC_TO_LATIN = {
+  а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',
+  к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',
+  ф:'f',х:'h',ц:'c',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'
+};
 function emailFor(name){
-  const clean = name.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_').replace(/^_+|_+$/g, '');
-  return (clean || 'player') + '@episodegame.com';
+  const lower = name.trim().toLowerCase();
+  let translit = '';
+  for (const ch of lower){
+    translit += (ch in CYRILLIC_TO_LATIN) ? CYRILLIC_TO_LATIN[ch] : ch;
+  }
+  const clean = translit.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return (clean || ('player'+Date.now())) + '@episodegame.com';
 }
 
 /* Diagnostic self-check, shown as a visible banner so a non-developer can screenshot the exact reason */
@@ -831,64 +853,61 @@ document.getElementById('photo-input').addEventListener('change', (e)=>{
   reader.readAsDataURL(file);
 });
 
-document.getElementById('enter-btn').addEventListener('click', async ()=>{
-  const nameInput = document.getElementById('name-input');
-  const passInput = document.getElementById('pass-input');
-  const errorEl = document.getElementById('reg-error');
-  const btn = document.getElementById('enter-btn');
+/* Turns raw Supabase error messages into clear Russian explanations for a non-technical player */
+function friendlyAuthError(message){
+  const m = message || '';
+  if(/rate limit/i.test(m)){
+    return 'Слишком много попыток регистрации подряд — это ограничение самого Supabase (защита от спама), не ошибка сайта. Подожди несколько минут и попробуй снова. Если аккаунт уже создавался — используй кнопку «Уже есть аккаунт — войти».';
+  }
+  if(/already registered|already exists|user_already_exists/i.test(m)){
+    return 'Это имя уже занято. Нажми «Уже есть аккаунт — войти» и введи правильный пароль.';
+  }
+  if(/invalid login credentials/i.test(m)){
+    return 'Неверное имя или пароль, либо аккаунт с таким именем ещё не создан. Если ты здесь впервые — нажми «Зарегистрироваться».';
+  }
+  return m;
+}
+
+function validateNamePass(nameInput, passInput, errorEl){
   const name = nameInput.value.trim();
   const pass = passInput.value.trim();
   errorEl.textContent = '';
   nameInput.style.borderColor = ''; passInput.style.borderColor = '';
+  if(!name){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи имя'; return null; }
+  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Придумай пароль (минимум 6 символов)'; return null; }
+  if(pass.length < 6){ passInput.style.borderColor = '#c96b5c'; errorEl.textContent = 'Пароль должен быть не короче 6 символов (это требование Supabase).'; return null; }
+  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return null; }
+  return { name, pass };
+}
 
-  if(!name){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи имя, чтобы войти'; return; }
-  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Придумай пароль (минимум 6 символов)'; return; }
-  if(pass.length < 6){ passInput.style.borderColor = '#c96b5c'; errorEl.textContent = 'Пароль должен быть не короче 6 символов (это требование Supabase).'; return; }
-  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return; }
+/* ===== РЕГИСТРАЦИЯ — только для новых игроков, создаёт аккаунт один раз ===== */
+document.getElementById('register-btn').addEventListener('click', async ()=>{
+  const nameInput = document.getElementById('name-input');
+  const passInput = document.getElementById('pass-input');
+  const errorEl = document.getElementById('reg-error');
+  const btn = document.getElementById('register-btn');
+
+  const v = validateNamePass(nameInput, passInput, errorEl);
+  if(!v) return;
+  const { name, pass } = v;
 
   btn.disabled = true;
-  const originalBtnText = btn.textContent;
-  btn.textContent = 'Проверяю...';
+  const originalText = btn.textContent;
+  btn.textContent = 'Регистрирую...';
 
   const email = emailFor(name);
-
-  // 1) Try signing in first — this naturally covers "this is an existing player" case,
-  //    using Supabase's own hashed-password check (we never see or store raw passwords).
-  const { data: signInData, error: signInError } = await sbClient.auth.signInWithPassword({ email, password: pass });
-
-  if(signInData && signInData.user){
-    let profile = await fetchMyProfile(signInData.user.id);
-    if(photoData && profile){
-      await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
-      profile = await fetchMyProfile(signInData.user.id);
-    }
-    state.me = profile;
-    btn.disabled = false; btn.textContent = originalBtnText;
-    if(!profile){
-      errorEl.textContent = 'Вход выполнен, но профиль игрока не найден — обратись к администратору.';
-      return;
-    }
-    enterApp();
-    return;
-  }
-
-  // 2) Sign-in failed. Either this name doesn't exist yet, or the password is wrong for an existing name.
   const { data: signUpData, error: signUpError } = await sbClient.auth.signUp({ email, password: pass });
 
+  btn.disabled = false; btn.textContent = originalText;
+
   if(signUpError){
-    btn.disabled = false; btn.textContent = originalBtnText;
-    if(/already registered|already exists|user_already_exists/i.test(signUpError.message||'')){
-      errorEl.textContent = 'Это имя уже занято. Введи правильный пароль этого игрока, чтобы войти под ним.';
-      passInput.style.borderColor = '#c96b5c';
-    } else {
-      errorEl.textContent = 'Не получилось зарегистрироваться: ' + signUpError.message;
-    }
+    errorEl.textContent = friendlyAuthError(signUpError.message);
+    if(/already registered|already exists|user_already_exists/i.test(signUpError.message||'')) passInput.style.borderColor = '#c96b5c';
     return;
   }
 
   const newUser = signUpData ? signUpData.user : null;
   if(!newUser){
-    btn.disabled = false; btn.textContent = originalBtnText;
     errorEl.textContent = 'Аккаунт создан, но нужно подтверждение почты. В Supabase: Authentication → Providers → Email → выключи "Confirm email", и попробуй снова.';
     return;
   }
@@ -899,8 +918,6 @@ document.getElementById('enter-btn').addEventListener('click', async ()=>{
     id: newUser.id, name, photo: photoData, number: num, points: 0, achievements: []
   });
 
-  btn.disabled = false; btn.textContent = originalBtnText;
-
   if(insertError){
     errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + insertError.message;
     return;
@@ -908,6 +925,45 @@ document.getElementById('enter-btn').addEventListener('click', async ()=>{
 
   await pushEvent(`${name} присоединился к игре под номером ${num}`);
   state.me = await fetchMyProfile(newUser.id);
+  enterApp();
+});
+
+/* ===== ВХОД — только для уже существующих игроков, никогда не создаёт новый аккаунт ===== */
+document.getElementById('login-btn').addEventListener('click', async ()=>{
+  const nameInput = document.getElementById('name-input');
+  const passInput = document.getElementById('pass-input');
+  const errorEl = document.getElementById('reg-error');
+  const btn = document.getElementById('login-btn');
+
+  const v = validateNamePass(nameInput, passInput, errorEl);
+  if(!v) return;
+  const { name, pass } = v;
+
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Вхожу...';
+
+  const email = emailFor(name);
+  const { data: signInData, error: signInError } = await sbClient.auth.signInWithPassword({ email, password: pass });
+
+  btn.disabled = false; btn.textContent = originalText;
+
+  if(signInError){
+    errorEl.textContent = friendlyAuthError(signInError.message);
+    passInput.style.borderColor = '#c96b5c';
+    return;
+  }
+
+  let profile = await fetchMyProfile(signInData.user.id);
+  if(photoData && profile){
+    await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
+    profile = await fetchMyProfile(signInData.user.id);
+  }
+  if(!profile){
+    errorEl.textContent = 'Вход выполнен, но профиль игрока не найден — обратись к администратору.';
+    return;
+  }
+  state.me = profile;
   enterApp();
 });
 
