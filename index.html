@@ -578,7 +578,7 @@ const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_UR
 /* Deterministic "fake" email so people can sign in with just a nickname, while still using real Supabase Auth underneath */
 function emailFor(name){
   const clean = name.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_').replace(/^_+|_+$/g, '');
-  return (clean || 'player') + '@episode.local';
+  return (clean || 'player') + '@episodegame.com';
 }
 
 /* Diagnostic self-check, shown as a visible banner so a non-developer can screenshot the exact reason */
