@@ -540,11 +540,13 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 
 <script>
 /* ============ SUPABASE CONFIG — заполни своими значениями из шага 2 инструкции ============ */
-const SUPABASE_URL = "https://hzjsnlklcnjcaszyrgcg.supabase.co/rest/v1/";      // например: https://abcxyz.supabase.co
-const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";    // "anon public" ключ из Settings → API
+const SUPABASE_URL_RAW = "https://hzjsnlklcnjcaszyrgcg.supabase.co/rest/v1/";
+const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";
+// Автоматически срезаем случайно вставленный хвост /rest/v1/ и завершающий слэш — client ожидает только базовый домен проекта.
+const SUPABASE_URL = SUPABASE_URL_RAW.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/,'');
 
 /* ============ CONSTANTS ============ */
-const ADMIN_PASSWORD = "454512";
+const ADMIN_PASSWORD = "454512"; // должен совпадать со значением admin_pw в SQL-функциях (adjust_points/rename_player/admin_delete_profile)
 const EPISODES = [
   {id:1, name:"Городские Салки", icon:"🏃", rules:"Один водящий стартует и должен найти и осалить любого участника по городу в заданных границах. Осалённый сам становится водящим. Нельзя прятаться в закрытых помещениях дольше 5 минут. Побеждает тот, кого ни разу не осалили, или тот, кто был водящим меньше всего."},
   {id:2, name:"Охота за метками", icon:"🎯", rules:"По городу спрятаны 10-15 меток. Подсказки публикуются в чат постепенно. Каждая найденная метка — баллы, фотоподтверждение обязательно. Побеждает нашедший больше всех к концу времени."},
@@ -554,7 +556,7 @@ const EPISODES = [
 ];
 const CHAPTER_WORD = "Глава";
 
-let state = { players:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:false, currentEpisode:null, chatPoll:null, pendingSave:false };
+let state = { profiles:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:false, currentEpisode:null, chatPoll:null, pendingSave:false };
 
 function getEpisodeMeta(id){
   const base = EPISODES.find(e=> e.id === Number(id));
@@ -562,16 +564,22 @@ function getEpisodeMeta(id){
   return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules };
 }
 
-/* ============ STORAGE HELPERS (Supabase-backed) ============ */
-/*
-  Shared game data (players, episodes, chat, etc.) lives in one Supabase table:
-    app_storage(key text primary key, value jsonb, updated_at timestamptz)
-  Personal "who am I on this device" data uses plain localStorage — this is
-  real hosting outside Claude's artifact sandbox, so localStorage works normally here.
-*/
+/* ============ SUPABASE CLIENT ============
+   Two kinds of data:
+   - Identity/accounts: real Supabase Auth (auth.users) + a `profiles` table (name, photo, points...).
+     Passwords are hashed and stored securely by Supabase itself — the site never sees or stores raw passwords.
+   - Everything else (episode/event state, chat, prize pool): one generic key-value table `app_storage`.
+   Nothing here uses localStorage/sessionStorage for accounts — session persistence is Supabase's own,
+   built-in mechanism (supabase-js stores/refreshes the session token automatically). */
 const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_URL.indexOf('YOUR_') === -1)
   ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+/* Deterministic "fake" email so people can sign in with just a nickname, while still using real Supabase Auth underneath */
+function emailFor(name){
+  const clean = name.trim().toLowerCase().replace(/[^a-z0-9а-яё]+/gi, '_').replace(/^_+|_+$/g, '');
+  return (clean || 'player') + '@episode.local';
+}
 
 /* Diagnostic self-check, shown as a visible banner so a non-developer can screenshot the exact reason */
 async function checkSupabaseConnection(){
@@ -585,11 +593,17 @@ async function checkSupabaseConnection(){
   try{
     const { error } = await sbClient.from('app_storage').select('key').limit(1);
     if(error){
-      diag.textContent = '⚠ ДИАГНОСТИКА: Supabase ответил ошибкой — ' + error.message;
+      diag.textContent = '⚠ ДИАГНОСТИКА: Supabase ответил ошибкой (app_storage) — ' + error.message;
       diag.style.display = 'block';
-    } else {
-      diag.style.display = 'none';
+      return;
     }
+    const { error: profErr } = await sbClient.from('profiles').select('id').limit(1);
+    if(profErr){
+      diag.textContent = '⚠ ДИАГНОСТИКА: Supabase ответил ошибкой (profiles) — ' + profErr.message + ' — проверь, что выполнил новый SQL-скрипт supabase_auth_setup.sql';
+      diag.style.display = 'block';
+      return;
+    }
+    diag.style.display = 'none';
   } catch(e){
     diag.textContent = '⚠ ДИАГНОСТИКА: не удалось подключиться к Supabase — ' + (e && e.message ? e.message : String(e));
     diag.style.display = 'block';
@@ -601,15 +615,17 @@ checkSupabaseConnection();
    Any change anyone makes (points, chat, new player, episode status, etc.)
    pushes an update to everyone currently on the site — no manual refresh needed. */
 if(sbClient){
-  sbClient
-    .channel('app_storage_live')
+  sbClient.channel('app_storage_live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'app_storage' }, ()=> handleLiveUpdate())
+    .subscribe();
+  sbClient.channel('profiles_live')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, ()=> handleLiveUpdate())
     .subscribe();
 }
 
 async function handleLiveUpdate(){
   if(document.getElementById('app').style.display === 'none') return; // not logged in yet
-  state.players = await sGet('players', []);
+  state.profiles = await fetchProfiles();
   state.episodes = await sGet('episodes', {});
   state.episodeOverrides = await sGet('episode_overrides', {});
   renderHeader();
@@ -623,6 +639,7 @@ async function handleLiveUpdate(){
   if(activeView === 'admin' && state.isAdmin) renderAdmin();
 }
 
+/* ---- generic shared key/value storage (episodes, events, chat, prize — unchanged data model) ---- */
 async function sGet(key, fallback){
   if(!sbClient) return fallback;
   try{
@@ -645,7 +662,7 @@ async function sSet(key, value, attempt=1){
     return false;
   }
 }
-/* personal (per-device) storage — plain localStorage, works fine on real hosting */
+/* small local (per-browser) UI preferences only — never used for accounts/auth */
 async function pGet(key, fallback){
   try{ const v = localStorage.getItem('episode_'+key); return v !== null ? JSON.parse(v) : fallback; }
   catch(e){ return fallback; }
@@ -653,6 +670,23 @@ async function pGet(key, fallback){
 async function pSet(key, value){
   try{ localStorage.setItem('episode_'+key, JSON.stringify(value)); return true; }
   catch(e){ return false; }
+}
+
+/* ============ PROFILES (players) — real Supabase table + secure RPC for admin actions ============ */
+async function fetchProfiles(){
+  if(!sbClient) return [];
+  const { data, error } = await sbClient.from('profiles').select('*').order('points', { ascending:false });
+  return error ? [] : (data||[]);
+}
+async function fetchMyProfile(userId){
+  if(!sbClient) return null;
+  const { data, error } = await sbClient.from('profiles').select('*').eq('id', userId).maybeSingle();
+  return error ? null : data;
+}
+async function countProfiles(){
+  if(!sbClient) return 0;
+  const { count, error } = await sbClient.from('profiles').select('id', { count:'exact', head:true });
+  return error ? 0 : (count||0);
 }
 
 /* Resize/compress a photo before storing — avoids huge base64 payloads breaking storage writes */
@@ -808,48 +842,72 @@ document.getElementById('enter-btn').addEventListener('click', async ()=>{
   nameInput.style.borderColor = ''; passInput.style.borderColor = '';
 
   if(!name){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи имя, чтобы войти'; return; }
-  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Придумай пароль'; return; }
+  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Придумай пароль (минимум 6 символов)'; return; }
+  if(pass.length < 6){ passInput.style.borderColor = '#c96b5c'; errorEl.textContent = 'Пароль должен быть не короче 6 символов (это требование Supabase).'; return; }
+  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return; }
 
   btn.disabled = true;
   const originalBtnText = btn.textContent;
-  btn.textContent = 'Сохраняю...';
+  btn.textContent = 'Проверяю...';
 
-  const players = await sGet('players', []);
-  const existing = players.find(p => p.name.toLowerCase() === name.toLowerCase());
+  const email = emailFor(name);
 
-  if(existing){
-    if(existing.password === pass){
-      if(photoData) existing.photo = photoData;
-      const ok = await sSet('players', players);
-      btn.disabled = false; btn.textContent = originalBtnText;
-      if(!ok){ state.pendingSave = true; showSaveWarning(); }
-      state.me = existing;
-      enterApp();
-    } else {
-      btn.disabled = false; btn.textContent = originalBtnText;
+  // 1) Try signing in first — this naturally covers "this is an existing player" case,
+  //    using Supabase's own hashed-password check (we never see or store raw passwords).
+  const { data: signInData, error: signInError } = await sbClient.auth.signInWithPassword({ email, password: pass });
+
+  if(signInData && signInData.user){
+    let profile = await fetchMyProfile(signInData.user.id);
+    if(photoData && profile){
+      await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
+      profile = await fetchMyProfile(signInData.user.id);
+    }
+    state.me = profile;
+    btn.disabled = false; btn.textContent = originalBtnText;
+    if(!profile){
+      errorEl.textContent = 'Вход выполнен, но профиль игрока не найден — обратись к администратору.';
+      return;
+    }
+    enterApp();
+    return;
+  }
+
+  // 2) Sign-in failed. Either this name doesn't exist yet, or the password is wrong for an existing name.
+  const { data: signUpData, error: signUpError } = await sbClient.auth.signUp({ email, password: pass });
+
+  if(signUpError){
+    btn.disabled = false; btn.textContent = originalBtnText;
+    if(/already registered|already exists|user_already_exists/i.test(signUpError.message||'')){
       errorEl.textContent = 'Это имя уже занято. Введи правильный пароль этого игрока, чтобы войти под ним.';
       passInput.style.borderColor = '#c96b5c';
+    } else {
+      errorEl.textContent = 'Не получилось зарегистрироваться: ' + signUpError.message;
     }
     return;
   }
 
-  let counter = await sGet('player_counter', 0);
-  counter = counter + 1;
-  const num = String(counter).padStart(2,'0');
-  const newPlayer = { id: 'p'+Date.now()+Math.floor(Math.random()*999), name, password: pass, number:num, photo: photoData, points:0, achievements:[], joinedAt: Date.now() };
-  players.push(newPlayer);
-
-  const savedPlayers = await sSet('players', players);
-  if(!savedPlayers){
-    state.pendingSave = true;
-    showSaveWarning();
-  } else {
-    await sSet('player_counter', counter);
-    await pushEvent(`${name} присоединился к игре под номером ${num}`);
+  const newUser = signUpData ? signUpData.user : null;
+  if(!newUser){
+    btn.disabled = false; btn.textContent = originalBtnText;
+    errorEl.textContent = 'Аккаунт создан, но нужно подтверждение почты. В Supabase: Authentication → Providers → Email → выключи "Confirm email", и попробуй снова.';
+    return;
   }
 
-  state.me = newPlayer;
+  const count = await countProfiles();
+  const num = String(count + 1).padStart(2, '0');
+  const { error: insertError } = await sbClient.from('profiles').insert({
+    id: newUser.id, name, photo: photoData, number: num, points: 0, achievements: []
+  });
+
   btn.disabled = false; btn.textContent = originalBtnText;
+
+  if(insertError){
+    errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + insertError.message;
+    return;
+  }
+
+  await pushEvent(`${name} присоединился к игре под номером ${num}`);
+  state.me = await fetchMyProfile(newUser.id);
   enterApp();
 });
 
@@ -858,7 +916,7 @@ function enterApp(){
   const ring = document.getElementById('shock-ring');
   bt.classList.add('play');
   ring.classList.add('play');
-  pSet('my_player_id', state.me.id);
+  // No manual "remember me" storage needed — Supabase Auth persists the real session itself.
   setTimeout(async ()=>{
     document.getElementById('welcome').style.display = 'none';
     document.getElementById('app').style.display = 'block';
@@ -876,19 +934,19 @@ async function pushEvent(text){
   await sSet('events', events.slice(0,30));
 }
 
-/* ============ POINTS (with achievement-style toast) ============ */
+/* ============ POINTS (secure server-side RPC — the admin password is checked inside Postgres, not just in JS) ============ */
 async function applyPoints(playerId, delta, reason){
-  const players = await sGet('players', []);
-  const p = players.find(x=>x.id===playerId);
-  if(!p) return null;
-  p.points = (p.points||0) + delta;
-  if(reason) p.achievements = [...(p.achievements||[]), reason];
-  await sSet('players', players);
-  await pushEvent(`${p.name} ${delta>=0?'получил':'потерял'} ${Math.abs(delta)} балл(ов)${reason? ' — '+reason:''}`);
-  state.players = players;
-  lastPointsSnapshot[p.id] = p.points;
+  if(!sbClient) return null;
+  const { error } = await sbClient.rpc('adjust_points', { target_id: playerId, delta, reason: reason || null, admin_pw: ADMIN_PASSWORD });
+  if(error){ alert('Не удалось начислить баллы: ' + error.message); return null; }
+  state.profiles = await fetchProfiles();
+  const p = state.profiles.find(x=>x.id===playerId);
+  if(p){
+    await pushEvent(`${p.name} ${delta>=0?'получил':'потерял'} ${Math.abs(delta)} балл(ов)${reason? ' — '+reason:''}`);
+    lastPointsSnapshot[p.id] = p.points;
+    showPointsToast(p.name, delta, reason);
+  }
   renderHeader();
-  showPointsToast(p.name, delta, reason);
   return p;
 }
 
@@ -910,19 +968,20 @@ let pollersStarted = false;
 function startBackgroundPollers(){
   if(pollersStarted) return;
   pollersStarted = true;
-  state.players.forEach(p=> lastPointsSnapshot[p.id] = p.points);
+  state.profiles.forEach(p=> lastPointsSnapshot[p.id] = p.points);
   setInterval(async ()=>{
+    // Safety-net fallback alongside Realtime (in case a push update was missed) — cheap, since Realtime already covers most updates instantly.
     if(document.getElementById('app').style.display === 'none') return;
-    const players = await sGet('players', []);
-    players.forEach(p=>{
+    const profiles = await fetchProfiles();
+    profiles.forEach(p=>{
       if(lastPointsSnapshot[p.id] !== undefined && lastPointsSnapshot[p.id] !== p.points){
         showPointsToast(p.name, p.points - lastPointsSnapshot[p.id]);
       }
       lastPointsSnapshot[p.id] = p.points;
     });
-    state.players = players;
+    state.profiles = profiles;
     if(document.getElementById('view-home').classList.contains('active')) renderHeader();
-  }, 6000);
+  }, 15000);
   setInterval(tickGlobalCountdownDisplay, 1000);
   setInterval(fetchActiveCountdown, 5000);
   fetchActiveCountdown();
@@ -946,24 +1005,19 @@ function tickGlobalCountdownDisplay(){
   }
 }
 
-/* Shown when the server rejects a write (e.g. temporary storage outage) — user keeps playing locally while we retry in background */
+/* Kept as a safety net: shown only if a background re-check finds the session/profile briefly out of sync. */
 function showSaveWarning(){
   const el = document.getElementById('save-warning-banner');
-  el.textContent = '⚠ Связь с сервером нестабильна — твой профиль ещё не подтверждён. Сайт пытается сохранить его в фоне, не закрывай страницу.';
+  el.textContent = '⚠ Связь с сервером нестабильна — данные могут быть не самыми свежими. Сайт пробует пересинхронизироваться в фоне.';
   el.style.display = 'block';
 }
 async function retryPendingSave(){
-  if(!state.pendingSave || !state.me) return;
-  const players = await sGet('players', null);
-  if(players === null) return; // server still unreachable, try again next tick
-  const exists = players.find(p=> p.id === state.me.id);
-  if(!exists) players.push(state.me);
-  const ok = await sSet('players', players);
-  if(ok){
+  if(!state.pendingSave || !state.me || !sbClient) return;
+  const profile = await fetchMyProfile(state.me.id);
+  if(profile){
     state.pendingSave = false;
     document.getElementById('save-warning-banner').style.display = 'none';
-    await pushEvent(`${state.me.name} — профиль синхронизирован после сбоя связи`);
-    state.players = players;
+    state.me = profile;
     renderHeader();
   }
 }
@@ -990,13 +1044,13 @@ function showView(name){
 
 document.getElementById('logout-btn').addEventListener('click', async ()=>{
   if(!confirm('Выйти из аккаунта на этом устройстве?')) return;
-  await pSet('my_player_id', null);
+  if(sbClient) await sbClient.auth.signOut();
   location.reload();
 });
 
 /* ============ DATA REFRESH ============ */
 async function refreshAll(){
-  state.players = await sGet('players', []);
+  state.profiles = await fetchProfiles();
   state.episodes = await sGet('episodes', {});
   state.episodeOverrides = await sGet('episode_overrides', {});
   state.adminLight = await pGet('admin_theme_light', false);
@@ -1005,7 +1059,7 @@ async function refreshAll(){
 }
 
 function renderHeader(){
-  const sorted = [...state.players].sort((a,b)=> b.points - a.points).slice(0,3);
+  const sorted = [...state.profiles].sort((a,b)=> b.points - a.points).slice(0,3);
   const lb = document.getElementById('mini-lb');
   lb.innerHTML = sorted.map((p,i)=> `<span>${i+1}. ${escapeHtml(p.name)} <b>${p.points}</b></span>`).join('') || '<span>пока нет данных</span>';
 }
@@ -1024,7 +1078,7 @@ function renderHome(){
   } else {
     banner.innerHTML = '';
   }
-  const sorted = [...state.players].sort((a,b)=> b.points - a.points);
+  const sorted = [...state.profiles].sort((a,b)=> b.points - a.points);
   const tbody = document.getElementById('lb-body');
   tbody.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img class="avatar-sm" src="${p.photo}">` : `<span class="avatar-sm" style="display:inline-flex;align-items:center;justify-content:center;background:var(--ash-dim);">${escapeHtml(p.name[0]||'?')}</span>`;
@@ -1053,7 +1107,7 @@ function animateCounts(){
 /* ============ PLAYERS ============ */
 function renderPlayers(){
   const grid = document.getElementById('players-grid');
-  const sorted = [...state.players].sort((a,b)=> b.points - a.points);
+  const sorted = [...state.profiles].sort((a,b)=> b.points - a.points);
   grid.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
     return `<div class="player-card" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
@@ -1061,7 +1115,7 @@ function renderPlayers(){
   grid.querySelectorAll('.player-card').forEach(c=> c.addEventListener('click', ()=> openProfileModal(c.dataset.id)));
 }
 function openProfileModal(id){
-  const p = state.players.find(x=>x.id===id);
+  const p = state.profiles.find(x=>x.id===id);
   if(!p) return;
   const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph" style="width:80px;height:80px;border-radius:50%;margin:0 auto 14px;display:flex;align-items:center;justify-content:center;background:var(--ash-dim);font-family:'Cinzel',serif;font-size:26px;">${escapeHtml(p.name[0]||'?')}</div>`;
   const badges = (p.achievements||[]).map(a=> `<span class="badge">${escapeHtml(a)}</span>`).join('') || '<div class="empty-state" style="padding:6px 0;">Ачивок пока нет</div>';
@@ -1117,7 +1171,7 @@ async function openEpisode(id){
   document.getElementById('episode-detail-content').innerHTML = html;
 
   if(data.status === 'active'){
-    document.getElementById('tagger-name').textContent = data.tagger ? (state.players.find(p=>p.id===data.tagger)?.name || '—') : '—';
+    document.getElementById('tagger-name').textContent = data.tagger ? (state.profiles.find(p=>p.id===data.tagger)?.name || '—') : '—';
     document.getElementById('pass-role-btn').addEventListener('click', async ()=>{
       const eps = await sGet('episodes', {});
       eps[id] = eps[id] || {};
@@ -1222,10 +1276,10 @@ async function renderEventDetail(id, quiet){
     const secs = Math.max(0, Math.ceil((ev.countdownEnd - now)/1000));
     html += `<div class="countdown-wrap"><div class="countdown-num">${secs}</div><div class="countdown-label">до старта игры</div></div>`;
   } else if(revealed){
-    const leaderPlayer = state.players.find(p=>p.id===ev.leader);
+    const leaderPlayer = state.profiles.find(p=>p.id===ev.leader);
     html += `<div class="leader-banner">Ведущий сейчас: ${leaderPlayer ? escapeHtml(leaderPlayer.name) : '—'}</div>`;
     if(state.me.id === ev.leader){
-      const others = state.players.filter(p=> p.id !== state.me.id);
+      const others = state.profiles.filter(p=> p.id !== state.me.id);
       html += `<div class="live-block"><div class="live-tag">ТЫ ВЕДУЩИЙ — выбери следующего</div>
         <select id="pick-target" class="paper-select" style="margin-bottom:10px; width:100%;">${others.map(p=> `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
         <button class="action-btn" id="pick-btn">Осалить / передать роль</button></div>`;
@@ -1275,8 +1329,8 @@ async function renderEventDetail(id, quiet){
   document.getElementById('start-game-btn')?.addEventListener('click', async ()=>{
     const evs = await sGet('custom_events', []);
     const e = evs.find(x=>x.id===id);
-    if(!e || !state.players.length) return;
-    const randomPlayer = state.players[Math.floor(Math.random()*state.players.length)];
+    if(!e || !state.profiles.length) return;
+    const randomPlayer = state.profiles[Math.floor(Math.random()*state.profiles.length)];
     e.leader = randomPlayer.id;
     e.countdownEnd = Date.now() + 10000;
     await sSet('custom_events', evs);
@@ -1288,7 +1342,7 @@ async function renderEventDetail(id, quiet){
 
   document.getElementById('pick-btn')?.addEventListener('click', async ()=>{
     const targetId = document.getElementById('pick-target').value;
-    const target = state.players.find(p=>p.id===targetId);
+    const target = state.profiles.find(p=>p.id===targetId);
     if(!target) return;
     const evs = await sGet('custom_events', []);
     const e = evs.find(x=>x.id===id);
@@ -1344,7 +1398,7 @@ async function renderPrize(){
 
 
 function renderProfile(){
-  const p = state.players.find(x=>x.id===state.me.id) || state.me;
+  const p = state.profiles.find(x=>x.id===state.me.id) || state.me;
   const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
   const badges = (p.achievements||[]).map(a=> `<span class="badge">${escapeHtml(a)}</span>`).join('') || '<div class="empty-state">Ачивок пока нет</div>';
   document.getElementById('profile-content').innerHTML = `
@@ -1483,7 +1537,7 @@ async function renderAdmin(){
   renderAdminEventsList();
 
   const ptsSelect = document.getElementById('pts-player');
-  ptsSelect.innerHTML = state.players.map(p=> `<option value="${p.id}">${escapeHtml(p.name)} (№${p.number})</option>`).join('');
+  ptsSelect.innerHTML = state.profiles.map(p=> `<option value="${p.id}">${escapeHtml(p.name)} (№${p.number})</option>`).join('');
   document.getElementById('pts-apply').addEventListener('click', async ()=>{
     const pid = ptsSelect.value;
     const delta = parseInt(document.getElementById('pts-delta').value,10);
@@ -1526,26 +1580,25 @@ async function renderAdminEventsList(){
 function renderAdminPlayersList(){
   const el = document.getElementById('admin-players-list');
   if(!el) return;
-  el.innerHTML = state.players.map(p=> `<div class="admin-ep-row"><div>${escapeHtml(p.name)} · №${p.number} · ${p.points} б.</div><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="small-btn" data-plus="${p.id}">+1</button><button class="small-btn" data-minus="${p.id}">−1</button><button class="small-btn" data-rename="${p.id}">✎ Имя</button><button class="small-btn danger" data-del="${p.id}">Удалить</button></div></div>`).join('') || '<div class="empty-state">Пока нет игроков</div>';
+  el.innerHTML = state.profiles.map(p=> `<div class="admin-ep-row"><div>${escapeHtml(p.name)} · №${p.number} · ${p.points} б.</div><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="small-btn" data-plus="${p.id}">+1</button><button class="small-btn" data-minus="${p.id}">−1</button><button class="small-btn" data-rename="${p.id}">✎ Имя</button><button class="small-btn danger" data-del="${p.id}">Удалить</button></div></div>`).join('') || '<div class="empty-state">Пока нет игроков</div>';
   el.querySelectorAll('[data-plus]').forEach(btn=> btn.addEventListener('click', async ()=>{ await applyPoints(btn.dataset.plus, 1); renderAdminPlayersList(); }));
   el.querySelectorAll('[data-minus]').forEach(btn=> btn.addEventListener('click', async ()=>{ await applyPoints(btn.dataset.minus, -1); renderAdminPlayersList(); }));
   el.querySelectorAll('[data-rename]').forEach(btn=> btn.addEventListener('click', async ()=>{
-    const players = await sGet('players', []);
-    const p = players.find(x=>x.id===btn.dataset.rename);
+    const p = state.profiles.find(x=>x.id===btn.dataset.rename);
     if(!p) return;
     const newName = prompt('Новое имя для игрока:', p.name);
     if(!newName || !newName.trim()) return;
-    p.name = newName.trim();
-    await sSet('players', players);
-    await pushEvent(`Игрок переименован в ${p.name}`);
-    state.players = players;
+    const { error } = await sbClient.rpc('rename_player', { target_id: p.id, new_name: newName.trim(), admin_pw: ADMIN_PASSWORD });
+    if(error){ alert('Не удалось переименовать: ' + error.message); return; }
+    await pushEvent(`Игрок переименован в ${newName.trim()}`);
+    state.profiles = await fetchProfiles();
     renderHeader(); renderAdminPlayersList();
   }));
   el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
-    if(!confirm('Удалить игрока?')) return;
-    const players = (await sGet('players', [])).filter(p=>p.id!==btn.dataset.del);
-    await sSet('players', players);
-    state.players = players;
+    if(!confirm('Удалить игрока? Его логин в Supabase Auth останется (полное удаление аккаунта требует служебного ключа), но профиль/баллы исчезнут из игры.')) return;
+    const { error } = await sbClient.rpc('admin_delete_profile', { target_id: btn.dataset.del, admin_pw: ADMIN_PASSWORD });
+    if(error){ alert('Не удалось удалить: ' + error.message); return; }
+    state.profiles = await fetchProfiles();
     renderHeader(); renderAdminPlayersList();
   }));
 }
@@ -1560,24 +1613,26 @@ function timeAgo(ts){
   return Math.floor(s/86400)+' дн назад';
 }
 
-/* ============ INIT ============ */
+/* ============ INIT — restore an existing Supabase session automatically (real session, not a manual localStorage hack) ============ */
 (async function init(){
-  const savedId = await pGet('my_player_id', null);
-  if(savedId){
-    const players = await sGet('players', []);
-    const found = players.find(p=> p.id === savedId);
-    if(found){
-      state.me = found;
-      document.getElementById('welcome').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      stopWelcomeEffects();
-      await refreshAll();
-      startBackgroundPollers();
-      return;
+  if(sbClient){
+    const { data: { session } } = await sbClient.auth.getSession();
+    if(session && session.user){
+      const profile = await fetchMyProfile(session.user.id);
+      if(profile){
+        state.me = profile;
+        document.getElementById('welcome').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        stopWelcomeEffects();
+        await refreshAll();
+        startBackgroundPollers();
+        return;
+      }
     }
   }
   buildTitle();
 })();
 </script>
+
 </body>
 </html>
