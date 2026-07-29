@@ -557,8 +557,8 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 
 <script>
 /* ============ SUPABASE CONFIG — заполни своими значениями из шага 2 инструкции ============ */
-const SUPABASE_URL_RAW = "https://xgwrmeystjwjzqdpisbd.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_S0eEdGPkFt4i5uMgFZ9UaA_0q0WckIz";
+const SUPABASE_URL_RAW = "https://hzjsnlklcnjcaszyrgcg.supabase.co/rest/v1/";
+const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";
 // Автоматически срезаем случайно вставленный хвост /rest/v1/ и завершающий слэш — client ожидает только базовый домен проекта.
 const SUPABASE_URL = SUPABASE_URL_RAW.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/,'');
 
@@ -928,8 +928,9 @@ document.getElementById('register-btn').addEventListener('click', async ()=>{
     }
 
     const newUser = signUpData ? signUpData.user : null;
-    if(!newUser){
-      errorEl.textContent = 'Аккаунт создан, но нужно подтверждение почты. В Supabase: Authentication → Providers → Email → выключи "Confirm email", и попробуй снова.';
+    const hasSession = signUpData && signUpData.session;
+    if(!newUser || !hasSession){
+      errorEl.textContent = 'Аккаунт создан, но нет активного входа — почти наверняка в Supabase всё ещё включено "Confirm email". Зайди в Supabase: Authentication → Providers → Email → выключи "Confirm email" (или Sign In / Providers → Email → Confirm email), сохрани и попробуй зарегистрироваться снова этим же именем — сработает через кнопку "Войти", аккаунт уже существует.';
       return;
     }
 
@@ -940,7 +941,11 @@ document.getElementById('register-btn').addEventListener('click', async ()=>{
     });
 
     if(insertError){
-      errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + errorToString(insertError);
+      if(/row-level security/i.test(errorToString(insertError))){
+        errorEl.textContent = 'Профиль не сохранился из-за защиты доступа (RLS) — обычно это значит, что "Confirm email" всё ещё включён в Supabase. Выключи его в Authentication → Providers → Email, и попробуй войти этим же именем через кнопку "Войти" — аккаунт уже создан, просто нажми Войти вместо Зарегистрироваться.';
+      } else {
+        errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + errorToString(insertError);
+      }
       return;
     }
 
@@ -980,6 +985,22 @@ document.getElementById('login-btn').addEventListener('click', async ()=>{
     }
 
     let profile = await fetchMyProfile(signInData.user.id);
+
+    /* Self-heal: an earlier registration attempt may have created the auth account
+       but failed to save the profile row (e.g. RLS blocked it because email confirmation
+       was pending at the time). Now that we're properly authenticated, retry creating it. */
+    if(!profile){
+      const count = await countProfiles();
+      const num = String(count + 1).padStart(2, '0');
+      const { error: healError } = await sbClient.from('profiles').insert({
+        id: signInData.user.id, name, photo: photoData, number: num, points: 0, achievements: []
+      });
+      if(!healError){
+        await pushEvent(`${name} присоединился к игре под номером ${num}`);
+        profile = await fetchMyProfile(signInData.user.id);
+      }
+    }
+
     if(photoData && profile){
       await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
       profile = await fetchMyProfile(signInData.user.id);
