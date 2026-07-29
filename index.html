@@ -468,7 +468,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
         <img id="photo-preview">
       </label>
       <input type="file" id="photo-input" accept="image/*" style="display:none">
-      <div class="photo-hint">нажми на кружок, чтобы добавить фото</div>
+      <div class="photo-hint">фото — только для регистрации, не обязательно. При входе можно оставить пустым, старое фото сохранится само.</div>
     </div>
     <div id="reg-error" class="reg-error"></div>
     <div class="two-btn-row">
@@ -854,8 +854,21 @@ document.getElementById('photo-input').addEventListener('change', (e)=>{
 });
 
 /* Turns raw Supabase error messages into clear Russian explanations for a non-technical player */
-function friendlyAuthError(message){
-  const m = message || '';
+/* Guarantees a readable string no matter what shape the error is — never shows "{}" or "[object Object]" */
+function errorToString(e){
+  if(!e) return 'неизвестная ошибка';
+  if(typeof e === 'string') return e;
+  if(e.message) return e.message;
+  if(e.error_description) return e.error_description;
+  if(e.msg) return e.msg;
+  try{
+    const s = JSON.stringify(e, Object.getOwnPropertyNames(e));
+    return (s && s !== '{}') ? s : ('код ошибки: ' + (e.status || e.code || 'неизвестен'));
+  } catch(_){ return String(e); }
+}
+
+function friendlyAuthError(err){
+  const m = errorToString(err);
   if(/rate limit/i.test(m)){
     return 'Слишком много попыток регистрации подряд — это ограничение самого Supabase (защита от спама), не ошибка сайта. Подожди несколько минут и попробуй снова. Если аккаунт уже создавался — используй кнопку «Уже есть аккаунт — войти».';
   }
@@ -864,6 +877,9 @@ function friendlyAuthError(message){
   }
   if(/invalid login credentials/i.test(m)){
     return 'Неверное имя или пароль, либо аккаунт с таким именем ещё не создан. Если ты здесь впервые — нажми «Зарегистрироваться».';
+  }
+  if(/failed to fetch|networkerror|load failed/i.test(m)){
+    return 'Не удалось связаться с сервером — проверь интернет-соединение и попробуй снова.';
   }
   return m;
 }
@@ -895,37 +911,41 @@ document.getElementById('register-btn').addEventListener('click', async ()=>{
   const originalText = btn.textContent;
   btn.textContent = 'Регистрирую...';
 
-  const email = emailFor(name);
-  const { data: signUpData, error: signUpError } = await sbClient.auth.signUp({ email, password: pass });
+  try{
+    const email = emailFor(name);
+    const { data: signUpData, error: signUpError } = await sbClient.auth.signUp({ email, password: pass });
 
-  btn.disabled = false; btn.textContent = originalText;
+    if(signUpError){
+      errorEl.textContent = friendlyAuthError(signUpError);
+      if(/already registered|already exists|user_already_exists/i.test(errorToString(signUpError))) passInput.style.borderColor = '#c96b5c';
+      return;
+    }
 
-  if(signUpError){
-    errorEl.textContent = friendlyAuthError(signUpError.message);
-    if(/already registered|already exists|user_already_exists/i.test(signUpError.message||'')) passInput.style.borderColor = '#c96b5c';
-    return;
+    const newUser = signUpData ? signUpData.user : null;
+    if(!newUser){
+      errorEl.textContent = 'Аккаунт создан, но нужно подтверждение почты. В Supabase: Authentication → Providers → Email → выключи "Confirm email", и попробуй снова.';
+      return;
+    }
+
+    const count = await countProfiles();
+    const num = String(count + 1).padStart(2, '0');
+    const { error: insertError } = await sbClient.from('profiles').insert({
+      id: newUser.id, name, photo: photoData, number: num, points: 0, achievements: []
+    });
+
+    if(insertError){
+      errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + errorToString(insertError);
+      return;
+    }
+
+    await pushEvent(`${name} присоединился к игре под номером ${num}`);
+    state.me = await fetchMyProfile(newUser.id);
+    enterApp();
+  } catch(e){
+    errorEl.textContent = 'Непредвиденная ошибка: ' + errorToString(e);
+  } finally {
+    btn.disabled = false; btn.textContent = originalText;
   }
-
-  const newUser = signUpData ? signUpData.user : null;
-  if(!newUser){
-    errorEl.textContent = 'Аккаунт создан, но нужно подтверждение почты. В Supabase: Authentication → Providers → Email → выключи "Confirm email", и попробуй снова.';
-    return;
-  }
-
-  const count = await countProfiles();
-  const num = String(count + 1).padStart(2, '0');
-  const { error: insertError } = await sbClient.from('profiles').insert({
-    id: newUser.id, name, photo: photoData, number: num, points: 0, achievements: []
-  });
-
-  if(insertError){
-    errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + insertError.message;
-    return;
-  }
-
-  await pushEvent(`${name} присоединился к игре под номером ${num}`);
-  state.me = await fetchMyProfile(newUser.id);
-  enterApp();
 });
 
 /* ===== ВХОД — только для уже существующих игроков, никогда не создаёт новый аккаунт ===== */
@@ -943,28 +963,32 @@ document.getElementById('login-btn').addEventListener('click', async ()=>{
   const originalText = btn.textContent;
   btn.textContent = 'Вхожу...';
 
-  const email = emailFor(name);
-  const { data: signInData, error: signInError } = await sbClient.auth.signInWithPassword({ email, password: pass });
+  try{
+    const email = emailFor(name);
+    const { data: signInData, error: signInError } = await sbClient.auth.signInWithPassword({ email, password: pass });
 
-  btn.disabled = false; btn.textContent = originalText;
+    if(signInError){
+      errorEl.textContent = friendlyAuthError(signInError);
+      passInput.style.borderColor = '#c96b5c';
+      return;
+    }
 
-  if(signInError){
-    errorEl.textContent = friendlyAuthError(signInError.message);
-    passInput.style.borderColor = '#c96b5c';
-    return;
+    let profile = await fetchMyProfile(signInData.user.id);
+    if(photoData && profile){
+      await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
+      profile = await fetchMyProfile(signInData.user.id);
+    }
+    if(!profile){
+      errorEl.textContent = 'Вход выполнен, но профиль игрока не найден — обратись к администратору.';
+      return;
+    }
+    state.me = profile;
+    enterApp();
+  } catch(e){
+    errorEl.textContent = 'Непредвиденная ошибка: ' + errorToString(e);
+  } finally {
+    btn.disabled = false; btn.textContent = originalText;
   }
-
-  let profile = await fetchMyProfile(signInData.user.id);
-  if(photoData && profile){
-    await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
-    profile = await fetchMyProfile(signInData.user.id);
-  }
-  if(!profile){
-    errorEl.textContent = 'Вход выполнен, но профиль игрока не найден — обратись к администратору.';
-    return;
-  }
-  state.me = profile;
-  enterApp();
 });
 
 function enterApp(){
