@@ -498,7 +498,10 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
   <main>
     <div class="view active" id="view-home">
       <div id="home-banner"></div>
-      <h2 class="section-title">Общий счёт</h2>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <h2 class="section-title" style="margin-bottom:0;">Общий счёт</h2>
+        <button class="small-btn" id="manual-refresh-btn">🔄 Обновить</button>
+      </div>
       <table class="lb"><thead><tr><th>#</th><th>Игрок</th><th style="text-align:right">Баллы</th></tr></thead><tbody id="lb-body"></tbody></table>
       <div class="event-feed">
         <h2 class="section-title" style="margin-top:30px;">Последние события</h2>
@@ -1149,6 +1152,13 @@ function activeEpisode(){
   const base = EPISODES.find(e => (state.episodes[e.id]?.status) === 'active');
   return base ? getEpisodeMeta(base.id) : null;
 }
+document.getElementById('manual-refresh-btn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('manual-refresh-btn');
+  btn.disabled = true; const orig = btn.textContent; btn.textContent = '🔄 Обновляю...';
+  await refreshAll();
+  btn.textContent = '✓ Обновлено'; 
+  setTimeout(()=>{ btn.disabled=false; btn.textContent = orig; }, 1400);
+});
 function renderHome(){
   const banner = document.getElementById('home-banner');
   const active = activeEpisode();
@@ -1547,6 +1557,17 @@ async function renderAdmin(){
     </div>
     <div id="admin-events-list"></div>
   `;
+  html += `<h2 class="section-title" style="margin-top:30px;">Массовая регистрация (30 готовых аккаунтов)</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Создаёт сразу 30 аккаунтов с игровыми никнеймами и общим паролем — друзьям не нужно проходить регистрацию самим, просто выбирают свободное имя и входят.</div>
+      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--parchment); background:rgba(255,255,255,0.03); padding:10px; border-radius:2px; margin-bottom:10px; line-height:1.7;">
+        Пароль для всех: <b style="color:var(--ember-bright);">111111</b><br>
+        Имена: Феникс, Тень, Вихрь, Полночь, Скаут, Рейд, Искра, Волк, Сокол, Гроза, Клинок, Дым, Заря, Шторм, Игла, Пепел, Вектор, Аврора, Хищник, Мгла, Раптор, Змей, Комета, Барс, Штиль, Вспышка, Тайга, Оникс, Феррум, Странник
+      </div>
+      <button class="small-btn" id="bulk-register-btn">▶ Создать все 30 аккаунтов</button>
+      <div id="bulk-register-log" style="margin-top:10px; font-family:'JetBrains Mono',monospace; font-size:11px; max-height:220px; overflow-y:auto; display:none; background:rgba(0,0,0,0.2); padding:10px; border-radius:2px;"></div>
+    </div>
+  `;
   html += `<h2 class="section-title" style="margin-top:30px;">Корректировка баллов</h2>
     <div class="admin-pts-row">
       <select id="pts-player" class="paper-select"></select>
@@ -1559,6 +1580,40 @@ async function renderAdmin(){
   `;
   box.innerHTML = html;
   box.classList.toggle('admin-light', !!state.adminLight);
+
+  document.getElementById('bulk-register-btn').addEventListener('click', async ()=>{
+    const btn = document.getElementById('bulk-register-btn');
+    const logEl = document.getElementById('bulk-register-log');
+    logEl.style.display = 'block'; logEl.innerHTML = '';
+    btn.disabled = true;
+    const BULK_NAMES = ["Феникс","Тень","Вихрь","Полночь","Скаут","Рейд","Искра","Волк","Сокол","Гроза","Клинок","Дым","Заря","Шторм","Игла","Пепел","Вектор","Аврора","Хищник","Мгла","Раптор","Змей","Комета","Барс","Штиль","Вспышка","Тайга","Оникс","Феррум","Странник"];
+    const bulkLog = (t, ok)=>{ const d=document.createElement('div'); d.style.color = ok===true?'#7fae6f':(ok===false?'#ff8a75':'var(--ash)'); d.textContent=t; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; };
+    let ok=0, skip=0, fail=0;
+    for(let i=0;i<BULK_NAMES.length;i++){
+      const name = BULK_NAMES[i];
+      bulkLog(`[${i+1}/30] ${name} — регистрирую...`);
+      try{
+        const email = emailFor(name);
+        const { data, error } = await sbClient.auth.signUp({ email, password: '111111' });
+        if(error){
+          if(/already registered|already exists/i.test(error.message||'')){ bulkLog('  → уже существует', true); skip++; }
+          else { bulkLog('  → ошибка: '+errorToString(error), false); fail++; }
+          await new Promise(r=>setTimeout(r,400)); continue;
+        }
+        const user = data ? data.user : null;
+        if(!user){ bulkLog('  → нужно подтверждение почты — выключи Confirm email в Supabase', false); fail++; continue; }
+        const count = await countProfiles();
+        const num = String(count+1).padStart(2,'0');
+        const { error: insErr } = await sbClient.from('profiles').insert({ id:user.id, name, number:num, points:0, achievements:[] });
+        if(insErr){ bulkLog('  → профиль не сохранился: '+errorToString(insErr), false); fail++; continue; }
+        bulkLog('  → готово, №'+num, true); ok++;
+      } catch(e){ bulkLog('  → непредвиденная ошибка: '+errorToString(e), false); fail++; }
+      await new Promise(r=>setTimeout(r,500));
+    }
+    bulkLog(`Готово: создано ${ok}, пропущено ${skip}, ошибок ${fail}.`, true);
+    state.profiles = await fetchProfiles();
+    btn.disabled = false;
+  });
 
   document.getElementById('admin-theme-toggle').addEventListener('click', async ()=>{
     state.adminLight = !state.adminLight;
