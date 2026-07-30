@@ -534,10 +534,6 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
         <button class="small-btn" id="manual-refresh-btn">🔄 Обновить</button>
       </div>
       <table class="lb"><thead><tr><th>#</th><th>Игрок</th><th style="text-align:right">Баллы</th></tr></thead><tbody id="lb-body"></tbody></table>
-      <div class="event-feed">
-        <h2 class="section-title" style="margin-top:30px;">Последние события</h2>
-        <div id="event-list"></div>
-      </div>
     </div>
 
     <div class="view" id="view-players">
@@ -601,8 +597,24 @@ const FIREBASE_CONFIG = {
 };
 const FIREBASE_VAPID_KEY = "BPnnb3AHjfqWyqsAv7c4BFIeTHoIPJxxkBqbMCVR8Ft4GSnVXu3IgwiQmU4qajgYEvApxDEk2osQp52o093TQUw";
 
+/* ============ АВТОМАТИЧЕСКАЯ РАССЫЛКА PUSH (через серверную функцию Supabase) ============ */
+const PUSH_FUNCTION_URL = SUPABASE_URL + "/functions/v1/send-push";
+const PUSH_FUNCTION_SECRET = "z5h2ADHuzK1Cjkmh5oPUeSpAlmR6G-uq"; // должен совпадать с FUNCTION_SECRET в самой функции
+async function sendPushToAll(title, body){
+  try{
+    const players = await sGet('players', []);
+    const tokens = players.filter(p=>p.pushToken).map(p=>p.pushToken);
+    if(!tokens.length) return;
+    await fetch(PUSH_FUNCTION_URL, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'x-function-secret': PUSH_FUNCTION_SECRET },
+      body: JSON.stringify({ title, body, tokens })
+    });
+  } catch(e){ console.warn('Push не отправился:', e); }
+}
+
 /* ============ CONSTANTS ============ */
-const ADMIN_PASSWORD_DEFAULT = "454512454512"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
+const ADMIN_PASSWORD_DEFAULT = "zYvgoEuVFjiS"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
 async function getAdminPassword(){
   const stored = await sGet('admin_password_override', null);
   return stored || ADMIN_PASSWORD_DEFAULT;
@@ -1222,11 +1234,6 @@ function renderHome(){
     return `<tr><td class="rank ${i===0?'top1':''}">${i+1}</td><td>${av}${escapeHtml(p.name)} <span class="mono" style="color:var(--ash);font-size:11px;">№${p.number}</span></td><td style="text-align:right" class="pts" data-target="${p.points}">0</td></tr>`;
   }).join('') || '<tr><td colspan="3" class="empty-state">Пока нет игроков</td></tr>';
   animateCounts();
-
-  sGet('events', []).then(events=>{
-    const list = document.getElementById('event-list');
-    list.innerHTML = events.length ? events.map((e,i)=> `<div class="event-item" style="animation-delay:${i*0.05}s"><span class="ts mono">${timeAgo(e.ts)}</span>${escapeHtml(e.text)}</div>`).join('') : '<div class="empty-state">Событий пока нет</div>';
-  });
 }
 function animateCounts(){
   document.querySelectorAll('.pts[data-target]').forEach(el=>{
@@ -1326,6 +1333,8 @@ async function openEpisode(id){
       <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат главы</h3>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
+      <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Что происходит</h3>
+      <div id="episode-event-list"></div>
       </div>`;
   } else if(data.status === 'done'){
     html += `<div class="empty-state">Глава завершена. Итоги учтены в общем счёте.</div>`;
@@ -1345,6 +1354,7 @@ async function openEpisode(id){
       eps[id].tagger = chosen.id;
       await sSet('episodes', eps);
       await pushEvent(`🎲 Игра началась! Первым водит: ${chosen.name}`);
+      sendPushToAll('EPISODE', `${ep.name}: игра началась! Первым водит ${chosen.name}`);
       openEpisode(id);
     });
 
@@ -1363,6 +1373,7 @@ async function openEpisode(id){
     });
     renderGeoList(id);
     loadChat(id);
+    renderEpisodeEvents();
     document.getElementById('chat-send').addEventListener('click', ()=> sendChat(id));
     document.getElementById('chat-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(id); });
     document.querySelectorAll('.game-action-btn').forEach(btn=> btn.addEventListener('click', async ()=>{
@@ -1389,13 +1400,14 @@ async function openEpisode(id){
         eps[id] = eps[id] || {};
         eps[id].tagger = targetPlayer.id;
         await sSet('episodes', eps);
+        sendPushToAll('EPISODE', `${ep.name}: теперь водит ${targetPlayer.name}!`);
       }
 
       await loadChat(id);
       openEpisode(id);
     }));
     if(state.chatPoll) clearInterval(state.chatPoll);
-    state.chatPoll = setInterval(()=> { loadChat(id); renderGeoList(id); }, 4500);
+    state.chatPoll = setInterval(()=> { loadChat(id); renderGeoList(id); renderEpisodeEvents(); }, 4500);
   }
 }
 
@@ -1435,6 +1447,14 @@ async function renderGeoList(id){
   }
 }
 
+async function renderEpisodeEvents(){
+  const el = document.getElementById('episode-event-list');
+  if(!el) return;
+  const events = await sGet('events', []);
+  el.innerHTML = events.length
+    ? events.slice(0,15).map((e,i)=> `<div class="event-item" style="animation-delay:${i*0.03}s"><span class="ts mono">${timeAgo(e.ts)}</span>${escapeHtml(e.text)}</div>`).join('')
+    : '<div class="empty-state">Пока тихо</div>';
+}
 async function loadChat(id){
   const chat = await sGet('chat_ep'+id, []);
   const log = document.getElementById('chat-log');
@@ -1583,6 +1603,7 @@ async function renderEventDetail(id, quiet){
     c.push({ player: 'Система', text: `${state.me.name} выбрал(а) ${target.name} — теперь ${target.name} ведущий!`, ts: Date.now() });
     await sSet('chat_ev'+id, c.slice(-50));
     await pushEvent(`${state.me.name} передал(а) роль ведущего игроку ${target.name} в событии «${e.title}»`);
+    sendPushToAll('EPISODE', `«${e.title}»: теперь ведущий ${target.name}!`);
     renderEventDetail(id);
   });
 }
@@ -1920,6 +1941,7 @@ async function renderAdmin(){
     const val = parseInt(document.getElementById('prize-input').value, 10) || 0;
     await sSet('prize_pool', val);
     await pushEvent(`Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
+    sendPushToAll('EPISODE', `Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
     document.getElementById('prize-save').textContent = 'Сохранено ✓';
     setTimeout(()=>{ document.getElementById('prize-save').textContent = 'Обновить банк'; }, 1500);
   });
