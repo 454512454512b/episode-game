@@ -11,8 +11,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap');
 
 :root{
-  --bg: #0a0806;
-  --bg-2: #120e0a;
+  --bg: #050403;
+  --bg-2: #0a0806;
   --ember: #c97c2c;
   --ember-bright: #f5b464;
   --rust: #7a2e1e;
@@ -58,6 +58,16 @@ body{
 }
 
 #ash-layer{position:fixed; inset:0; pointer-events:none; z-index:6; overflow:hidden;}
+
+/* ---------- ambient smoke drifting in from the edges — slow, translucent, low-key ---------- */
+.smoke-layer{
+  position:fixed; top:-10%; bottom:-10%; width:60vw; pointer-events:none; z-index:1;
+  opacity:.5; mix-blend-mode:screen; filter:blur(6px);
+}
+.smoke-left{ left:-15vw; background: radial-gradient(ellipse 60% 100% at 0% 40%, rgba(120,90,60,.28), transparent 70%); animation: smokeDriftLeft 34s ease-in-out infinite; }
+.smoke-right{ right:-15vw; background: radial-gradient(ellipse 60% 100% at 100% 65%, rgba(90,70,50,.22), transparent 70%); animation: smokeDriftRight 42s ease-in-out infinite; }
+@keyframes smokeDriftLeft{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(4vw,-3vh) scale(1.12);} }
+@keyframes smokeDriftRight{ 0%,100%{ transform:translate(0,0) scale(1);} 50%{ transform:translate(-3vw,3vh) scale(1.15);} }
 .ash-particle{
   position:absolute; bottom:-10px; border-radius:50%;
   background: radial-gradient(circle, var(--ember-bright), transparent 70%);
@@ -79,6 +89,10 @@ body{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
   text-align:center; padding:24px;
   transition: opacity .5s ease;
+}
+#first-time-card{
+  position:fixed; inset:0; z-index:25; background:rgba(6,4,3,0.94);
+  display:flex; align-items:center; justify-content:center; padding:24px; text-align:center;
 }
 .title-wrap{display:flex; gap:.08em; justify-content:center; margin-bottom:18px;}
 .title-wrap span{
@@ -450,6 +464,8 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 
 <canvas id="burn-canvas"></canvas>
 <div class="vignette" id="vignette-el"></div>
+<div class="smoke-layer smoke-left"></div>
+<div class="smoke-layer smoke-right"></div>
 <div id="ash-layer"></div>
 <div id="burn-transition"></div>
 <div id="shock-ring"></div>
@@ -463,21 +479,29 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
   <div class="title-wrap" id="title-wrap"></div>
   <div class="subtitle">каждую неделю город становится площадкой. каждый эпизод меняет счёт.</div>
   <div class="reg-box">
-    <input type="text" id="name-input" class="paper-input" placeholder="Введи своё имя" maxlength="24" autocomplete="off">
-    <input type="password" id="pass-input" class="paper-input" placeholder="Придумай пароль" maxlength="32" autocomplete="off" style="margin-top:10px;">
-    <div class="photo-row">
-      <label class="photo-frame" id="photo-frame" for="photo-input">
-        <span id="photo-placeholder">＋</span>
-        <img id="photo-preview">
-      </label>
-      <input type="file" id="photo-input" accept="image/*" style="display:none">
-      <div class="photo-hint">фото — только для регистрации, не обязательно. При входе можно оставить пустым, старое фото сохранится само.</div>
-    </div>
+    <input type="text" id="name-input" class="paper-input" placeholder="Логин" maxlength="24" autocomplete="off">
+    <input type="password" id="pass-input" class="paper-input" placeholder="Пароль" maxlength="32" autocomplete="off" style="margin-top:10px;">
     <div id="reg-error" class="reg-error"></div>
-    <div class="two-btn-row">
-      <button class="enter-btn" id="register-btn">Зарегистрироваться</button>
-      <button class="enter-btn enter-btn-secondary" id="login-btn">Уже есть аккаунт — войти</button>
+    <button class="enter-btn" id="login-btn">Войти в игру</button>
+  </div>
+</div>
+
+<!-- FIRST-TIME CARD — shown once, right after first successful login, to set display name + photo -->
+<div id="first-time-card" style="display:none;">
+  <div class="reg-box" style="animation: fadeUp 1s ease forwards;">
+    <div class="disp" style="font-size:20px; margin-bottom:6px;">Добро пожаловать</div>
+    <div style="color:var(--ash); font-size:14px; margin-bottom:20px;">Придумай, как тебя будут видеть остальные — логин останется только твоим, для входа.</div>
+    <input type="text" id="display-name-input" class="paper-input" placeholder="Твоё отображаемое имя" maxlength="24" autocomplete="off">
+    <div class="photo-row">
+      <label class="photo-frame" id="first-photo-frame" for="first-photo-input">
+        <span id="first-photo-placeholder">＋</span>
+        <img id="first-photo-preview">
+      </label>
+      <input type="file" id="first-photo-input" accept="image/*" style="display:none">
+      <div class="photo-hint">фото — необязательно, можно добавить позже в профиле</div>
     </div>
+    <div id="first-time-error" class="reg-error"></div>
+    <button class="enter-btn" id="first-time-continue-btn">Продолжить</button>
   </div>
 </div>
 
@@ -563,13 +587,32 @@ const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";
 const SUPABASE_URL = SUPABASE_URL_RAW.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/,'');
 
 /* ============ CONSTANTS ============ */
-const ADMIN_PASSWORD = "454512"; // должен совпадать со значением admin_pw в SQL-функциях (adjust_points/rename_player/admin_delete_profile)
+const ADMIN_PASSWORD_DEFAULT = "zYvgoEuVFjiS"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
+async function getAdminPassword(){
+  const stored = await sGet('admin_password_override', null);
+  return stored || ADMIN_PASSWORD_DEFAULT;
+}
 const EPISODES = [
-  {id:1, name:"Городские Салки", icon:"🏃", rules:"Один водящий стартует и должен найти и осалить любого участника по городу в заданных границах. Осалённый сам становится водящим. Нельзя прятаться в закрытых помещениях дольше 5 минут. Побеждает тот, кого ни разу не осалили, или тот, кто был водящим меньше всего."},
-  {id:2, name:"Охота за метками", icon:"🎯", rules:"По городу спрятаны 10-15 меток. Подсказки публикуются в чат постепенно. Каждая найденная метка — баллы, фотоподтверждение обязательно. Побеждает нашедший больше всех к концу времени."},
+  {id:1, name:"Городские Салки", icon:"🏃", rules:"Один водящий стартует и должен найти и осалить любого участника по городу в заданных границах. Осалённый сам становится водящим. Нельзя прятаться в закрытых помещениях дольше 5 минут. Побеждает тот, кого ни разу не осалили, или тот, кто был водящим меньше всего.",
+    showTagger:true,
+    actions:[ {key:'tag', label:'Я осалил', needsTarget:true, announce:(a,t)=> `⚡ ${a} осалил ${t} — теперь ${t} водящий!`} ]
+  },
+  {id:2, name:"Охота за метками", icon:"🎯", rules:"По городу спрятаны 10-15 меток. Подсказки публикуются в чат постепенно. Каждая найденная метка — баллы, фотоподтверждение обязательно. Побеждает нашедший больше всех к концу времени.",
+    actions:[ {key:'found', label:'Я нашёл метку', needsTarget:false, announce:(a)=> `🎯 ${a} нашёл метку!`} ]
+  },
   {id:3, name:"Тайный агент", icon:"🎭", rules:"Каждому тайно назначается цель. «Устранение» — личная встреча с кодовой фразой/предметом и подтверждением. После устранения цели ты получаешь её цель. Победитель — выживший дольше всех или устранивший больше всех."},
-  {id:4, name:"Ночной дозор", icon:"🚩", rules:"Командный захват флага в парке/лесу. Пойманного на чужой территории отправляют в плен, освободить может свой игрок. Побеждает команда, забравшая флаг или набравшая больше очков за раунды."},
-  {id:5, name:"Контрабанда", icon:"📦", rules:"Одна команда — перевозчики с грузом, идут по городу от точки к точке. Вторая — патрули, пытаются перехватить груз. Груз можно передавать между перевозчиками. Побеждает либо доставившая груз команда, либо перехватившие патрули."}
+  {id:4, name:"Ночной дозор", icon:"🚩", rules:"Командный захват флага в парке/лесу. Пойманного на чужой территории отправляют в плен, освободить может свой игрок. Побеждает команда, забравшая флаг или набравшая больше очков за раунды.",
+    actions:[
+      {key:'capture', label:'Взял в плен', needsTarget:true, announce:(a,t)=> `🚩 ${a} взял в плен ${t}!`},
+      {key:'free', label:'Освободил', needsTarget:true, announce:(a,t)=> `🚩 ${a} освободил ${t} из плена!`}
+    ]
+  },
+  {id:5, name:"Контрабанда", icon:"📦", rules:"Одна команда — перевозчики с грузом, идут по городу от точки к точке. Вторая — патрули, пытаются перехватить груз. Груз можно передавать между перевозчиками. Побеждает либо доставившая груз команда, либо перехватившие патрули.",
+    actions:[
+      {key:'pass', label:'Передал груз', needsTarget:true, announce:(a,t)=> `📦 ${a} передал груз игроку ${t}!`},
+      {key:'intercept', label:'Перехватил груз', needsTarget:true, announce:(a,t)=> `📦 ${a} перехватил груз у ${t}!`}
+    ]
+  }
 ];
 const CHAPTER_WORD = "Глава";
 
@@ -578,36 +621,34 @@ let state = { profiles:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:fa
 function getEpisodeMeta(id){
   const base = EPISODES.find(e=> e.id === Number(id));
   const over = state.episodeOverrides[id] || {};
-  return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules };
+  return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules, actions: base.actions || null, showTagger: !!base.showTagger };
 }
 
 /* ============ SUPABASE CLIENT ============
-   Two kinds of data:
-   - Identity/accounts: real Supabase Auth (auth.users) + a `profiles` table (name, photo, points...).
-     Passwords are hashed and stored securely by Supabase itself — the site never sees or stores raw passwords.
-   - Everything else (episode/event state, chat, prize pool): one generic key-value table `app_storage`.
-   Nothing here uses localStorage/sessionStorage for accounts — session persistence is Supabase's own,
-   built-in mechanism (supabase-js stores/refreshes the session token automatically). */
+   Только одно общее хранилище (app_storage) — без Supabase Auth. Проверено диагностикой:
+   app_storage читается/пишется идеально надёжно, а сервис Auth на этом аккаунте нестабилен,
+   поэтому вход построен на готовых парах имя/пароль (см. SEED_ACCOUNTS ниже), а не на email-регистрации. */
 const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_URL.indexOf('YOUR_') === -1)
   ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
-/* Deterministic "fake" email so people can sign in with just a nickname, while still using real Supabase Auth underneath.
-   Supabase requires a strictly ASCII/Latin email format — Cyrillic names must be transliterated first, not just "allowed through". */
-const CYRILLIC_TO_LATIN = {
-  а:'a',б:'b',в:'v',г:'g',д:'d',е:'e',ё:'e',ж:'zh',з:'z',и:'i',й:'y',
-  к:'k',л:'l',м:'m',н:'n',о:'o',п:'p',р:'r',с:'s',т:'t',у:'u',
-  ф:'f',х:'h',ц:'c',ч:'ch',ш:'sh',щ:'sch',ъ:'',ы:'y',ь:'',э:'e',ю:'yu',я:'ya'
-};
-function emailFor(name){
-  const lower = name.trim().toLowerCase();
-  let translit = '';
-  for (const ch of lower){
-    translit += (ch in CYRILLIC_TO_LATIN) ? CYRILLIC_TO_LATIN[ch] : ch;
-  }
-  const clean = translit.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return (clean || ('player'+Date.now())) + '@episodegame.com';
-}
+/* ============ ГОТОВЫЕ АККАУНТЫ ============
+   Supabase Auth (регистрация по email) на этом проекте стабильно отвечает 500-й ошибкой —
+   проверено диагностикой на двух разных проектах. app_storage при этом работает идеально.
+   Поэтому вход сделан проще и надёжнее: готовые пары логин/пароль, зашитые прямо в код.
+   Логин — служебный, для входа, его никто кроме владельца не видит. При первом входе
+   игрок сам придумывает отображаемое имя и фото — именно они показываются всем остальным. */
+const SEED_ACCOUNTS = [
+  {login:"Ксеня", password:"2951"}, {login:"Никита Т", password:"6234"}, {login:"Егор", password:"9233"},
+  {login:"Злата", password:"9385"}, {login:"Арина", password:"2681"}, {login:"Костя", password:"4658"},
+  {login:"Никита Л", password:"7891"}, {login:"Сава", password:"9975"}, {login:"Саня", password:"9042"},
+  {login:"Тимур", password:"8226"}, {login:"Ваня Щ", password:"4931"}, {login:"Ваня К", password:"1041"},
+  {login:"Карина", password:"2322"}, {login:"Ульяна Ш", password:"2814"}, {login:"Ульяна Т", password:"5706"},
+  {login:"Дима М", password:"2606"}, {login:"Катя Е", password:"8367"}, {login:"Марго", password:"1188"},
+  {login:"Аля Г", password:"9032"}, {login:"Елисей Г", password:"6148"}, {login:"Ваня А", password:"4444"},
+  {login:"Никита Б", password:"7508"}, {login:"Маша Ф", password:"5120"}, {login:"Даня", password:"6696"},
+  {login:"Тим", password:"6843"}
+];
 
 /* Diagnostic self-check, shown as a visible banner so a non-developer can screenshot the exact reason */
 async function checkSupabaseConnection(){
@@ -625,12 +666,6 @@ async function checkSupabaseConnection(){
       diag.style.display = 'block';
       return;
     }
-    const { error: profErr } = await sbClient.from('profiles').select('id').limit(1);
-    if(profErr){
-      diag.textContent = '⚠ ДИАГНОСТИКА: Supabase ответил ошибкой (profiles) — ' + profErr.message + ' — проверь, что выполнил новый SQL-скрипт supabase_auth_setup.sql';
-      diag.style.display = 'block';
-      return;
-    }
     diag.style.display = 'none';
   } catch(e){
     diag.textContent = '⚠ ДИАГНОСТИКА: не удалось подключиться к Supabase — ' + (e && e.message ? e.message : String(e));
@@ -645,9 +680,6 @@ checkSupabaseConnection();
 if(sbClient){
   sbClient.channel('app_storage_live')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'app_storage' }, ()=> handleLiveUpdate())
-    .subscribe();
-  sbClient.channel('profiles_live')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, ()=> handleLiveUpdate())
     .subscribe();
 }
 
@@ -667,7 +699,7 @@ async function handleLiveUpdate(){
   if(activeView === 'admin' && state.isAdmin) renderAdmin();
 }
 
-/* ---- generic shared key/value storage (episodes, events, chat, prize — unchanged data model) ---- */
+/* ---- generic shared key/value storage (episodes, events, chat, prize, players — everything lives here now) ---- */
 async function sGet(key, fallback){
   if(!sbClient) return fallback;
   try{
@@ -690,7 +722,7 @@ async function sSet(key, value, attempt=1){
     return false;
   }
 }
-/* small local (per-browser) UI preferences only — never used for accounts/auth */
+/* per-device "who am I" — plain localStorage, works fine on real hosting (outside Claude's artifact sandbox) */
 async function pGet(key, fallback){
   try{ const v = localStorage.getItem('episode_'+key); return v !== null ? JSON.parse(v) : fallback; }
   catch(e){ return fallback; }
@@ -700,21 +732,25 @@ async function pSet(key, value){
   catch(e){ return false; }
 }
 
-/* ============ PROFILES (players) — real Supabase table + secure RPC for admin actions ============ */
+/* ============ PROFILES (players) — plain array stored under app_storage['players'], no Supabase Auth involved ============ */
+async function ensurePlayersSeeded(){
+  const existing = await sGet('players', null);
+  if(existing && existing.length) return existing;
+  const seeded = SEED_ACCOUNTS.map((acc,i)=> ({
+    id: 'p' + (i+1), login: acc.login, password: acc.password,
+    name: acc.login, displayNameSet: false, photo: null,
+    number: String(i+1).padStart(2,'0'), points: 0, achievements: []
+  }));
+  await sSet('players', seeded);
+  return seeded;
+}
 async function fetchProfiles(){
-  if(!sbClient) return [];
-  const { data, error } = await sbClient.from('profiles').select('*').order('points', { ascending:false });
-  return error ? [] : (data||[]);
+  const list = await sGet('players', []);
+  return [...list].sort((a,b)=> b.points - a.points);
 }
-async function fetchMyProfile(userId){
-  if(!sbClient) return null;
-  const { data, error } = await sbClient.from('profiles').select('*').eq('id', userId).maybeSingle();
-  return error ? null : data;
-}
-async function countProfiles(){
-  if(!sbClient) return 0;
-  const { count, error } = await sbClient.from('profiles').select('id', { count:'exact', head:true });
-  return error ? 0 : (count||0);
+async function fetchMyProfile(id){
+  const list = await sGet('players', []);
+  return list.find(p=> p.id === id) || null;
 }
 
 /* Resize/compress a photo before storing — avoids huge base64 payloads breaking storage writes */
@@ -759,9 +795,9 @@ function spawnAsh(){
   layer.appendChild(p);
   setTimeout(()=>p.remove(), dur*1000+200);
 }
-let ashIntervalId = setInterval(spawnAsh, 340);
+let ashIntervalId = setInterval(spawnAsh, 190);
 
-/* ============ BURNING PAPER CANVAS (whole sheet, not just edges) — WELCOME SCREEN ONLY ============ */
+/* ============ BURNING PAPER CANVAS (whole sheet) — runs across the entire site, not just welcome ============ */
 let burnActive = true;
 let burnSpawnIntervalId = null;
 function initBurnCanvas(){
@@ -773,6 +809,8 @@ function initBurnCanvas(){
 
   const points = [];
   const MAX_POINTS = 18;
+  const HOLD_MS = 22000;   // how long a fully-burned hole lingers before fading
+  const FADE_MS = 6000;    // how long the fade-out takes
 
   function spawnPoint(){
     if(points.length >= MAX_POINTS) return;
@@ -783,6 +821,7 @@ function initBurnCanvas(){
       maxR: 16 + Math.random()*76,
       speed: 0.08 + Math.random()*0.22,
       settled: false,
+      settledAt: null,
       flicker: Math.random()*Math.PI*2
     });
   }
@@ -792,15 +831,25 @@ function initBurnCanvas(){
   function tick(){
     if(!burnActive) return;
     ctx.clearRect(0,0,canvas.width, canvas.height);
-    const t = Date.now()/500;
-    points.forEach(p=>{
+    const now = Date.now();
+    const t = now/500;
+    for(let i=points.length-1;i>=0;i--){
+      const p = points[i];
       if(!p.settled){
         p.r += p.speed;
-        if(p.r >= p.maxR){ p.r = p.maxR; p.settled = true; }
+        if(p.r >= p.maxR){ p.r = p.maxR; p.settled = true; p.settledAt = now; }
       }
-      const glow = p.settled
+      let fadeMul = 1;
+      if(p.settled){
+        const age = now - p.settledAt;
+        if(age > HOLD_MS){
+          fadeMul = Math.max(0, 1 - (age-HOLD_MS)/FADE_MS);
+          if(fadeMul <= 0){ points.splice(i,1); continue; }
+        }
+      }
+      const glow = (p.settled
         ? 0.14 + Math.sin(t + p.flicker)*0.05
-        : 0.45 + Math.sin(t*2.2 + p.flicker)*0.14;
+        : 0.45 + Math.sin(t*2.2 + p.flicker)*0.14) * fadeMul;
 
       // advancing flame-colored rim, where the "fire" is eating the paper
       const rim = ctx.createRadialGradient(p.x,p.y,Math.max(p.r*0.7,1),p.x,p.y,p.r*1.3);
@@ -812,46 +861,35 @@ function initBurnCanvas(){
 
       // charred hole eating into the "page"
       const hole = ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,p.r);
-      hole.addColorStop(0, 'rgba(4,3,2,0.9)');
+      hole.addColorStop(0, `rgba(4,3,2,${0.9*fadeMul})`);
       hole.addColorStop(1, 'rgba(10,6,3,0)');
       ctx.fillStyle = hole;
       ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill();
-    });
+    }
     requestAnimationFrame(tick);
   }
   tick();
 }
 initBurnCanvas();
 
-/* Stops all welcome-screen decorative effects (ash, burning canvas, vignette) once the user enters the main site */
+/* Stops the vignette (welcome-screen framing only) once the user enters the main site.
+   Ember particles and the burning-paper canvas keep running everywhere — they're the site's signature ambient effect, not just an entry animation. */
 function stopWelcomeEffects(){
-  if(ashIntervalId){ clearInterval(ashIntervalId); ashIntervalId = null; }
-  const ashLayer = document.getElementById('ash-layer');
-  ashLayer.innerHTML = '';
-  ashLayer.style.display = 'none';
-
-  burnActive = false;
-  if(burnSpawnIntervalId){ clearInterval(burnSpawnIntervalId); burnSpawnIntervalId = null; }
-  const canvas = document.getElementById('burn-canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0,0,canvas.width, canvas.height);
-  canvas.style.display = 'none';
-
   document.getElementById('vignette-el').style.display = 'none';
 }
 
 /* ============ REGISTRATION ============ */
 let photoData = null;
-document.getElementById('photo-input').addEventListener('change', (e)=>{
+document.getElementById('first-photo-input').addEventListener('change', (e)=>{
   const file = e.target.files[0];
   if(!file) return;
   const reader = new FileReader();
   reader.onload = async ()=>{
     const compressed = await compressImage(reader.result, 220, 0.82);
     photoData = compressed;
-    const prev = document.getElementById('photo-preview');
-    const placeholder = document.getElementById('photo-placeholder');
-    const frame = document.getElementById('photo-frame');
+    const prev = document.getElementById('first-photo-preview');
+    const placeholder = document.getElementById('first-photo-placeholder');
+    const frame = document.getElementById('first-photo-frame');
     prev.src = photoData; prev.style.display='block';
     placeholder.style.display = 'none';
     frame.classList.add('has-photo');
@@ -873,84 +911,51 @@ function errorToString(e){
   } catch(_){ return String(e); }
 }
 
-function friendlyAuthError(err){
-  const m = errorToString(err);
-  if(/rate limit/i.test(m)){
-    return 'Слишком много попыток регистрации подряд — это ограничение самого Supabase (защита от спама), не ошибка сайта. Подожди несколько минут и попробуй снова. Если аккаунт уже создавался — используй кнопку «Уже есть аккаунт — войти».';
-  }
-  if(/already registered|already exists|user_already_exists/i.test(m)){
-    return 'Это имя уже занято. Нажми «Уже есть аккаунт — войти» и введи правильный пароль.';
-  }
-  if(/invalid login credentials/i.test(m)){
-    return 'Неверное имя или пароль, либо аккаунт с таким именем ещё не создан. Если ты здесь впервые — нажми «Зарегистрироваться».';
-  }
-  if(/failed to fetch|networkerror|load failed/i.test(m)){
-    return 'Не удалось связаться с сервером — проверь интернет-соединение и попробуй снова.';
-  }
-  return m;
-}
-
-function validateNamePass(nameInput, passInput, errorEl){
-  const name = nameInput.value.trim();
-  const pass = passInput.value.trim();
-  errorEl.textContent = '';
-  nameInput.style.borderColor = ''; passInput.style.borderColor = '';
-  if(!name){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи имя'; return null; }
-  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Придумай пароль (минимум 6 символов)'; return null; }
-  if(pass.length < 6){ passInput.style.borderColor = '#c96b5c'; errorEl.textContent = 'Пароль должен быть не короче 6 символов (это требование Supabase).'; return null; }
-  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return null; }
-  return { name, pass };
-}
-
-/* ===== РЕГИСТРАЦИЯ — только для новых игроков, создаёт аккаунт один раз ===== */
-document.getElementById('register-btn').addEventListener('click', async ()=>{
+/* ===== ВХОД — сверяем логин и пароль со списком готовых аккаунтов в app_storage ===== */
+document.getElementById('login-btn').addEventListener('click', async ()=>{
   const nameInput = document.getElementById('name-input');
   const passInput = document.getElementById('pass-input');
   const errorEl = document.getElementById('reg-error');
-  const btn = document.getElementById('register-btn');
+  const btn = document.getElementById('login-btn');
 
-  const v = validateNamePass(nameInput, passInput, errorEl);
-  if(!v) return;
-  const { name, pass } = v;
+  const login = nameInput.value.trim();
+  const pass = passInput.value.trim();
+  errorEl.textContent = ''; nameInput.style.borderColor = ''; passInput.style.borderColor = '';
+  if(!login){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи логин'; return; }
+  if(!pass){ passInput.style.borderColor = '#c96b5c'; passInput.placeholder = 'Введи пароль'; return; }
+  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return; }
 
   btn.disabled = true;
   const originalText = btn.textContent;
-  btn.textContent = 'Регистрирую...';
+  btn.textContent = 'Вхожу...';
 
   try{
-    const email = emailFor(name);
-    const { data: signUpData, error: signUpError } = await sbClient.auth.signUp({ email, password: pass });
+    const players = await ensurePlayersSeeded();
+    const found = players.find(p => (p.login||'').toLowerCase() === login.toLowerCase());
 
-    if(signUpError){
-      errorEl.textContent = friendlyAuthError(signUpError);
-      if(/already registered|already exists|user_already_exists/i.test(errorToString(signUpError))) passInput.style.borderColor = '#c96b5c';
+    if(!found){
+      errorEl.textContent = 'Такого логина нет в списке. Проверь написание — логин и пароль выдал организатор.';
+      nameInput.style.borderColor = '#c96b5c';
+      return;
+    }
+    if(found.password !== pass){
+      errorEl.textContent = 'Неверный пароль для этого логина.';
+      passInput.style.borderColor = '#c96b5c';
       return;
     }
 
-    const newUser = signUpData ? signUpData.user : null;
-    const hasSession = signUpData && signUpData.session;
-    if(!newUser || !hasSession){
-      errorEl.textContent = 'Аккаунт создан, но нет активного входа — почти наверняка в Supabase всё ещё включено "Confirm email". Зайди в Supabase: Authentication → Providers → Email → выключи "Confirm email" (или Sign In / Providers → Email → Confirm email), сохрани и попробуй зарегистрироваться снова этим же именем — сработает через кнопку "Войти", аккаунт уже существует.';
+    if(!found.displayNameSet){
+      /* first login ever for this account — collect a display name (+ optional photo) before entering */
+      document.getElementById('welcome').style.display = 'none';
+      document.getElementById('first-time-card').style.display = 'flex';
+      document.getElementById('display-name-input').value = '';
+      document.getElementById('first-time-card').dataset.playerId = found.id;
+      btn.disabled = false; btn.textContent = originalText;
       return;
     }
 
-    const count = await countProfiles();
-    const num = String(count + 1).padStart(2, '0');
-    const { error: insertError } = await sbClient.from('profiles').insert({
-      id: newUser.id, name, photo: photoData, number: num, points: 0, achievements: []
-    });
-
-    if(insertError){
-      if(/row-level security/i.test(errorToString(insertError))){
-        errorEl.textContent = 'Профиль не сохранился из-за защиты доступа (RLS) — обычно это значит, что "Confirm email" всё ещё включён в Supabase. Выключи его в Authentication → Providers → Email, и попробуй войти этим же именем через кнопку "Войти" — аккаунт уже создан, просто нажми Войти вместо Зарегистрироваться.';
-      } else {
-        errorEl.textContent = 'Аккаунт создан, но профиль не сохранился: ' + errorToString(insertError);
-      }
-      return;
-    }
-
-    await pushEvent(`${name} присоединился к игре под номером ${num}`);
-    state.me = await fetchMyProfile(newUser.id);
+    state.me = found;
+    await pSet('my_player_id', found.id);
     enterApp();
   } catch(e){
     errorEl.textContent = 'Непредвиденная ошибка: ' + errorToString(e);
@@ -959,57 +964,34 @@ document.getElementById('register-btn').addEventListener('click', async ()=>{
   }
 });
 
-/* ===== ВХОД — только для уже существующих игроков, никогда не создаёт новый аккаунт ===== */
-document.getElementById('login-btn').addEventListener('click', async ()=>{
-  const nameInput = document.getElementById('name-input');
-  const passInput = document.getElementById('pass-input');
-  const errorEl = document.getElementById('reg-error');
-  const btn = document.getElementById('login-btn');
+document.getElementById('first-time-continue-btn').addEventListener('click', async ()=>{
+  const card = document.getElementById('first-time-card');
+  const errorEl = document.getElementById('first-time-error');
+  const nameInput = document.getElementById('display-name-input');
+  const btn = document.getElementById('first-time-continue-btn');
+  const playerId = card.dataset.playerId;
 
-  const v = validateNamePass(nameInput, passInput, errorEl);
-  if(!v) return;
-  const { name, pass } = v;
+  const displayName = nameInput.value.trim();
+  errorEl.textContent = ''; nameInput.style.borderColor = '';
+  if(!displayName){ nameInput.style.borderColor = '#c96b5c'; nameInput.placeholder = 'Введи имя'; return; }
 
   btn.disabled = true;
   const originalText = btn.textContent;
-  btn.textContent = 'Вхожу...';
+  btn.textContent = 'Сохраняю...';
 
   try{
-    const email = emailFor(name);
-    const { data: signInData, error: signInError } = await sbClient.auth.signInWithPassword({ email, password: pass });
+    const players = await sGet('players', []);
+    const target = players.find(p=> p.id === playerId);
+    if(!target){ errorEl.textContent = 'Что-то пошло не так — попробуй войти заново.'; return; }
+    target.name = displayName;
+    target.displayNameSet = true;
+    if(photoData) target.photo = photoData;
+    const ok = await sSet('players', players);
+    if(!ok){ errorEl.textContent = 'Не удалось сохранить — проверь интернет и попробуй ещё раз.'; return; }
 
-    if(signInError){
-      errorEl.textContent = friendlyAuthError(signInError);
-      passInput.style.borderColor = '#c96b5c';
-      return;
-    }
-
-    let profile = await fetchMyProfile(signInData.user.id);
-
-    /* Self-heal: an earlier registration attempt may have created the auth account
-       but failed to save the profile row (e.g. RLS blocked it because email confirmation
-       was pending at the time). Now that we're properly authenticated, retry creating it. */
-    if(!profile){
-      const count = await countProfiles();
-      const num = String(count + 1).padStart(2, '0');
-      const { error: healError } = await sbClient.from('profiles').insert({
-        id: signInData.user.id, name, photo: photoData, number: num, points: 0, achievements: []
-      });
-      if(!healError){
-        await pushEvent(`${name} присоединился к игре под номером ${num}`);
-        profile = await fetchMyProfile(signInData.user.id);
-      }
-    }
-
-    if(photoData && profile){
-      await sbClient.from('profiles').update({ photo: photoData }).eq('id', signInData.user.id);
-      profile = await fetchMyProfile(signInData.user.id);
-    }
-    if(!profile){
-      errorEl.textContent = 'Вход выполнен, но профиль игрока не найден — обратись к администратору.';
-      return;
-    }
-    state.me = profile;
+    state.me = target;
+    await pSet('my_player_id', target.id);
+    card.style.display = 'none';
     enterApp();
   } catch(e){
     errorEl.textContent = 'Непредвиденная ошибка: ' + errorToString(e);
@@ -1023,9 +1005,9 @@ function enterApp(){
   const ring = document.getElementById('shock-ring');
   bt.classList.add('play');
   ring.classList.add('play');
-  // No manual "remember me" storage needed — Supabase Auth persists the real session itself.
   setTimeout(async ()=>{
     document.getElementById('welcome').style.display = 'none';
+    document.getElementById('first-time-card').style.display = 'none';
     document.getElementById('app').style.display = 'block';
     stopWelcomeEffects();
     await refreshAll();
@@ -1041,18 +1023,19 @@ async function pushEvent(text){
   await sSet('events', events.slice(0,30));
 }
 
-/* ============ POINTS (secure server-side RPC — the admin password is checked inside Postgres, not just in JS) ============ */
+/* ============ POINTS (напрямую в app_storage — доступ в админку уже защищён паролем администратора на клиенте) ============ */
 async function applyPoints(playerId, delta, reason){
-  if(!sbClient) return null;
-  const { error } = await sbClient.rpc('adjust_points', { target_id: playerId, delta, reason: reason || null, admin_pw: ADMIN_PASSWORD });
-  if(error){ alert('Не удалось начислить баллы: ' + error.message); return null; }
+  const players = await sGet('players', []);
+  const p = players.find(x=>x.id===playerId);
+  if(!p) return null;
+  p.points = (p.points||0) + delta;
+  if(reason) p.achievements = [...(p.achievements||[]), reason];
+  const ok = await sSet('players', players);
+  if(!ok){ alert('Не удалось начислить баллы — проблема с сохранением, попробуй ещё раз.'); return null; }
   state.profiles = await fetchProfiles();
-  const p = state.profiles.find(x=>x.id===playerId);
-  if(p){
-    await pushEvent(`${p.name} ${delta>=0?'получил':'потерял'} ${Math.abs(delta)} балл(ов)${reason? ' — '+reason:''}`);
-    lastPointsSnapshot[p.id] = p.points;
-    showPointsToast(p.name, delta, reason);
-  }
+  await pushEvent(`${p.name} ${delta>=0?'получил':'потерял'} ${Math.abs(delta)} балл(ов)${reason? ' — '+reason:''}`);
+  lastPointsSnapshot[p.id] = p.points;
+  showPointsToast(p.name, delta, reason);
   renderHeader();
   return p;
 }
@@ -1151,7 +1134,7 @@ function showView(name){
 
 document.getElementById('logout-btn').addEventListener('click', async ()=>{
   if(!confirm('Выйти из аккаунта на этом устройстве?')) return;
-  if(sbClient) await sbClient.auth.signOut();
+  await pSet('my_player_id', null);
   location.reload();
 });
 
@@ -1268,11 +1251,25 @@ async function openEpisode(id){
   let html = `<h2 class="section-title" style="display:flex; align-items:center; gap:14px;"><span class="ep-icon" style="font-size:30px;">${ep.icon}</span>${CHAPTER_WORD} ${id}: ${escapeHtml(ep.name)}</h2><div class="rules-block">${escapeHtml(ep.rules)}</div>`;
 
   if(data.status === 'active'){
+    const actionsHtml = ep.actions ? `
+      <div class="game-actions" style="margin:14px 0; padding:12px; border:1px solid var(--ash-dim); border-radius:2px;">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">ДЕЙСТВИЯ ЭТОЙ ИГРЫ</div>
+        ${ep.actions.map(a=>{
+          if(a.needsTarget){
+            return `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; align-items:center;">
+              <select class="paper-select action-target-select" data-key="${a.key}" style="flex:1; min-width:140px;">${state.profiles.filter(p=>p.id!==state.me.id).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
+              <button class="action-btn game-action-btn" data-key="${a.key}">${escapeHtml(a.label)}</button>
+            </div>`;
+          }
+          return `<button class="action-btn game-action-btn" data-key="${a.key}" style="margin:0 8px 8px 0;">${escapeHtml(a.label)}</button>`;
+        }).join('')}
+      </div>` : '';
     html += `<div class="live-block"><div class="live-tag">● В ЭФИРЕ</div>
       <div class="tagger-line">Держит роль сейчас: <b id="tagger-name">—</b></div>
       <button class="action-btn" id="pass-role-btn">Я передал роль</button>
       <button class="action-btn" id="share-geo-btn" style="margin-left:8px;">Поделиться геолокацией</button>
       <div class="geo-list" id="geo-list"></div>
+      ${actionsHtml}
       <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат главы</h3>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
@@ -1307,6 +1304,26 @@ async function openEpisode(id){
     loadChat(id);
     document.getElementById('chat-send').addEventListener('click', ()=> sendChat(id));
     document.getElementById('chat-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(id); });
+    document.querySelectorAll('.game-action-btn').forEach(btn=> btn.addEventListener('click', async ()=>{
+      const action = (ep.actions||[]).find(a=>a.key===btn.dataset.key);
+      if(!action) return;
+      btn.disabled = true;
+      let text;
+      if(action.needsTarget){
+        const sel = document.querySelector(`.action-target-select[data-key="${action.key}"]`);
+        const targetPlayer = state.profiles.find(p=>p.id===sel.value);
+        if(!targetPlayer){ btn.disabled=false; return; }
+        text = action.announce(state.me.name, targetPlayer.name);
+      } else {
+        text = action.announce(state.me.name);
+      }
+      const chat = await sGet('chat_ep'+id, []);
+      chat.push({ player: 'Система', text, ts: Date.now() });
+      await sSet('chat_ep'+id, chat.slice(-50));
+      await pushEvent(text);
+      await loadChat(id);
+      btn.disabled = false;
+    }));
     if(state.chatPoll) clearInterval(state.chatPoll);
     state.chatPoll = setInterval(()=> loadChat(id), 4500);
   }
@@ -1513,12 +1530,94 @@ async function renderPrize(){
 
 function renderProfile(){
   const p = state.profiles.find(x=>x.id===state.me.id) || state.me;
-  const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
+  const av = p.photo
+    ? `<img src="${p.photo}">`
+    : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
   const badges = (p.achievements||[]).map(a=> `<span class="badge">${escapeHtml(a)}</span>`).join('') || '<div class="empty-state">Ачивок пока нет</div>';
   document.getElementById('profile-content').innerHTML = `
-    <div class="profile-hero">${av}<div class="disp" style="font-size:22px;">${escapeHtml(p.name)}</div><div class="mono" style="color:var(--ash);font-size:12px;margin-top:6px;">№${p.number} · ${p.points} баллов</div></div>
+    <div class="profile-hero">
+      <label class="photo-frame ${p.photo?'has-photo':''}" id="profile-photo-frame" for="profile-photo-input" style="margin:0 auto 14px; cursor:pointer;">
+        ${p.photo ? `<img id="profile-photo-preview" src="${p.photo}">` : `<span id="profile-photo-placeholder">＋</span><img id="profile-photo-preview" style="display:none;">`}
+      </label>
+      <input type="file" id="profile-photo-input" accept="image/*" style="display:none">
+      <div style="display:flex; gap:8px; align-items:center; justify-content:center; margin-top:4px;">
+        <input type="text" id="profile-name-input" class="paper-input" value="${escapeHtml(p.name)}" style="font-size:20px; text-align:center; width:220px; padding:8px 12px;" maxlength="24">
+        <button class="small-btn" id="profile-name-save">Сохранить</button>
+      </div>
+      <div id="profile-name-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:4px;"></div>
+      <div class="mono" style="color:var(--ash);font-size:12px;margin-top:6px;">№${p.number} · ${p.points} баллов</div>
+    </div>
     <h2 class="section-title">Ачивки</h2>${badges}
+    <h2 class="section-title" style="margin-top:26px;">🔒 Сменить пароль</h2>
+    <div style="max-width:320px; margin:0 auto;">
+      <input type="password" id="pw-current-input" class="paper-input" placeholder="Текущий пароль" style="margin-bottom:10px;">
+      <input type="password" id="pw-new-input" class="paper-input" placeholder="Новый пароль" style="margin-bottom:10px;">
+      <input type="password" id="pw-new-repeat-input" class="paper-input" placeholder="Повтори новый пароль" style="margin-bottom:10px;">
+      <button class="small-btn" id="pw-change-btn" style="width:100%; padding:10px;">Сменить пароль</button>
+      <div id="pw-change-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px; text-align:center;"></div>
+    </div>
   `;
+
+  document.getElementById('pw-change-btn').addEventListener('click', async ()=>{
+    const cur = document.getElementById('pw-current-input').value.trim();
+    const nw = document.getElementById('pw-new-input').value.trim();
+    const rep = document.getElementById('pw-new-repeat-input').value.trim();
+    const status = document.getElementById('pw-change-status');
+    status.textContent = '';
+    if(!cur || !nw || !rep){ status.textContent = 'Заполни все три поля'; status.style.color = '#ff8a75'; return; }
+    if(nw.length < 4){ status.textContent = 'Новый пароль — минимум 4 символа'; status.style.color = '#ff8a75'; return; }
+    if(nw !== rep){ status.textContent = 'Новый пароль и повтор не совпадают'; status.style.color = '#ff8a75'; return; }
+    const players = await sGet('players', []);
+    const target = players.find(x=>x.id===p.id);
+    if(!target) return;
+    if(target.password !== cur){ status.textContent = 'Текущий пароль введён неверно'; status.style.color = '#ff8a75'; return; }
+    target.password = nw;
+    const ok = await sSet('players', players);
+    if(ok){
+      state.me = target;
+      status.textContent = 'Пароль изменён ✓'; status.style.color = 'var(--ember-bright)';
+      document.getElementById('pw-current-input').value = '';
+      document.getElementById('pw-new-input').value = '';
+      document.getElementById('pw-new-repeat-input').value = '';
+    } else {
+      status.textContent = 'Не удалось сохранить, попробуй ещё раз'; status.style.color = '#ff8a75';
+    }
+  });
+
+  document.getElementById('profile-photo-input').addEventListener('change', async (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async ()=>{
+      const compressed = await compressImage(reader.result, 220, 0.82);
+      const players = await sGet('players', []);
+      const target = players.find(x=>x.id===p.id);
+      if(!target) return;
+      target.photo = compressed;
+      const ok = await sSet('players', players);
+      if(ok){ state.me = target; state.profiles = await fetchProfiles(); renderProfile(); renderHeader(); }
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('profile-name-save').addEventListener('click', async ()=>{
+    const input = document.getElementById('profile-name-input');
+    const status = document.getElementById('profile-name-status');
+    const newName = input.value.trim();
+    if(!newName){ status.textContent = 'Имя не может быть пустым'; status.style.color = '#ff8a75'; return; }
+    const players = await sGet('players', []);
+    const target = players.find(x=>x.id===p.id);
+    if(!target) return;
+    target.name = newName;
+    const ok = await sSet('players', players);
+    if(ok){
+      state.me = target; state.profiles = await fetchProfiles();
+      status.textContent = 'Сохранено ✓'; status.style.color = 'var(--ember-bright)';
+      renderHeader();
+      setTimeout(()=> renderProfile(), 900);
+    } else {
+      status.textContent = 'Не удалось сохранить, попробуй ещё раз'; status.style.color = '#ff8a75';
+    }
+  });
 }
 
 /* ============ ADMIN ============ */
@@ -1526,9 +1625,10 @@ async function renderAdmin(){
   const box = document.getElementById('admin-content');
   if(!state.isAdmin){
     box.innerHTML = `<div class="admin-pass"><div class="disp" style="margin-bottom:14px;">Доступ создателя</div><input type="password" class="paper-input" id="admin-pass-input" placeholder="Пароль" style="width:100%; text-align:center; margin-bottom:14px;"><button class="enter-btn" id="admin-pass-btn" style="animation:none;">Войти</button></div>`;
-    document.getElementById('admin-pass-btn').addEventListener('click', ()=>{
+    document.getElementById('admin-pass-btn').addEventListener('click', async ()=>{
       const input = document.getElementById('admin-pass-input');
-      if(input.value === ADMIN_PASSWORD){
+      const realPassword = await getAdminPassword();
+      if(input.value === realPassword){
         state.isAdmin = true;
         const bt = document.getElementById('burn-transition');
         const ring = document.getElementById('shock-ring');
@@ -1581,15 +1681,21 @@ async function renderAdmin(){
     </div>
     <div id="admin-events-list"></div>
   `;
-  html += `<h2 class="section-title" style="margin-top:30px;">Массовая регистрация (30 готовых аккаунтов)</h2>
+  html += `<h2 class="section-title" style="margin-top:30px;">Готовые аккаунты</h2>
     <div class="admin-ep-block">
-      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Создаёт сразу 30 аккаунтов с игровыми никнеймами и общим паролем — друзьям не нужно проходить регистрацию самим, просто выбирают свободное имя и входят.</div>
-      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--parchment); background:rgba(255,255,255,0.03); padding:10px; border-radius:2px; margin-bottom:10px; line-height:1.7;">
-        Пароль для всех: <b style="color:var(--ember-bright);">111111</b><br>
-        Имена: Феникс, Тень, Вихрь, Полночь, Скаут, Рейд, Искра, Волк, Сокол, Гроза, Клинок, Дым, Заря, Шторм, Игла, Пепел, Вектор, Аврора, Хищник, Мгла, Раптор, Змей, Комета, Барс, Штиль, Вспышка, Тайга, Оникс, Феррум, Странник
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Эти ${SEED_ACCOUNTS.length} пар логин/пароль уже созданы автоматически при первом запуске сайта — раздай их друзьям. При первом входе каждый сам придумает своё отображаемое имя и фото — их видят все, а логин остаётся служебным.</div>
+      <div style="font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--parchment); background:rgba(255,255,255,0.03); padding:10px; border-radius:2px; line-height:1.9;">
+        ${SEED_ACCOUNTS.map(a=> `${escapeHtml(a.login)} — ${a.password}`).join('<br>')}
       </div>
-      <button class="small-btn" id="bulk-register-btn">▶ Создать все 30 аккаунтов</button>
-      <div id="bulk-register-log" style="margin-top:10px; font-family:'JetBrains Mono',monospace; font-size:11px; max-height:220px; overflow-y:auto; display:none; background:rgba(0,0,0,0.2); padding:10px; border-radius:2px;"></div>
+    </div>
+  `;
+  html += `<h2 class="section-title" style="margin-top:30px;">🔐 Пароль администратора</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Этот пароль знаешь только ты — он не связан с обычными аккаунтами игроков. Можешь сменить его здесь в любой момент, новое значение сохранится в базе.</div>
+      <input type="password" class="paper-input" id="admin-pw-current" placeholder="Текущий пароль администратора" style="margin-bottom:8px;">
+      <input type="password" class="paper-input" id="admin-pw-new" placeholder="Новый пароль администратора" style="margin-bottom:8px;">
+      <button class="small-btn" id="admin-pw-change-btn">Сменить пароль администратора</button>
+      <div id="admin-pw-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px;"></div>
     </div>
   `;
   html += `<h2 class="section-title" style="margin-top:30px;">Корректировка баллов</h2>
@@ -1605,44 +1711,31 @@ async function renderAdmin(){
   box.innerHTML = html;
   box.classList.toggle('admin-light', !!state.adminLight);
 
-  document.getElementById('bulk-register-btn').addEventListener('click', async ()=>{
-    const btn = document.getElementById('bulk-register-btn');
-    const logEl = document.getElementById('bulk-register-log');
-    logEl.style.display = 'block'; logEl.innerHTML = '';
-    btn.disabled = true;
-    const BULK_NAMES = ["Феникс","Тень","Вихрь","Полночь","Скаут","Рейд","Искра","Волк","Сокол","Гроза","Клинок","Дым","Заря","Шторм","Игла","Пепел","Вектор","Аврора","Хищник","Мгла","Раптор","Змей","Комета","Барс","Штиль","Вспышка","Тайга","Оникс","Феррум","Странник"];
-    const bulkLog = (t, ok)=>{ const d=document.createElement('div'); d.style.color = ok===true?'#7fae6f':(ok===false?'#ff8a75':'var(--ash)'); d.textContent=t; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; };
-    let ok=0, skip=0, fail=0;
-    for(let i=0;i<BULK_NAMES.length;i++){
-      const name = BULK_NAMES[i];
-      bulkLog(`[${i+1}/30] ${name} — регистрирую...`);
-      try{
-        const email = emailFor(name);
-        const { data, error } = await sbClient.auth.signUp({ email, password: '111111' });
-        if(error){
-          if(/already registered|already exists/i.test(error.message||'')){ bulkLog('  → уже существует', true); skip++; }
-          else { bulkLog('  → ошибка: '+errorToString(error), false); fail++; }
-          await new Promise(r=>setTimeout(r,400)); continue;
-        }
-        const user = data ? data.user : null;
-        if(!user){ bulkLog('  → нужно подтверждение почты — выключи Confirm email в Supabase', false); fail++; continue; }
-        const count = await countProfiles();
-        const num = String(count+1).padStart(2,'0');
-        const { error: insErr } = await sbClient.from('profiles').insert({ id:user.id, name, number:num, points:0, achievements:[] });
-        if(insErr){ bulkLog('  → профиль не сохранился: '+errorToString(insErr), false); fail++; continue; }
-        bulkLog('  → готово, №'+num, true); ok++;
-      } catch(e){ bulkLog('  → непредвиденная ошибка: '+errorToString(e), false); fail++; }
-      await new Promise(r=>setTimeout(r,500));
-    }
-    bulkLog(`Готово: создано ${ok}, пропущено ${skip}, ошибок ${fail}.`, true);
-    state.profiles = await fetchProfiles();
-    btn.disabled = false;
-  });
-
   document.getElementById('admin-theme-toggle').addEventListener('click', async ()=>{
     state.adminLight = !state.adminLight;
     await pSet('admin_theme_light', state.adminLight);
     renderAdmin();
+  });
+
+  document.getElementById('admin-pw-change-btn').addEventListener('click', async ()=>{
+    const curInput = document.getElementById('admin-pw-current');
+    const newInput = document.getElementById('admin-pw-new');
+    const status = document.getElementById('admin-pw-status');
+    const cur = curInput.value.trim();
+    const nw = newInput.value.trim();
+    status.textContent = '';
+    if(!cur || !nw){ status.textContent = 'Заполни оба поля'; status.style.color = '#ff8a75'; return; }
+    if(nw.length < 6){ status.textContent = 'Новый пароль — минимум 6 символов'; status.style.color = '#ff8a75'; return; }
+    const realPassword = await getAdminPassword();
+    if(cur !== realPassword){ status.textContent = 'Текущий пароль администратора введён неверно'; status.style.color = '#ff8a75'; return; }
+    const ok = await sSet('admin_password_override', nw);
+    if(ok){
+      status.textContent = 'Пароль администратора изменён ✓ — запомни новый, он больше нигде не показывается.';
+      status.style.color = 'var(--ember-bright)';
+      curInput.value = ''; newInput.value = '';
+    } else {
+      status.textContent = 'Не удалось сохранить, попробуй ещё раз'; status.style.color = '#ff8a75';
+    }
   });
 
   box.querySelectorAll('.ep-status-select').forEach(sel=>{
@@ -1747,16 +1840,21 @@ function renderAdminPlayersList(){
     if(!p) return;
     const newName = prompt('Новое имя для игрока:', p.name);
     if(!newName || !newName.trim()) return;
-    const { error } = await sbClient.rpc('rename_player', { target_id: p.id, new_name: newName.trim(), admin_pw: ADMIN_PASSWORD });
-    if(error){ alert('Не удалось переименовать: ' + error.message); return; }
+    const players = await sGet('players', []);
+    const target = players.find(x=>x.id===p.id);
+    if(!target) return;
+    target.name = newName.trim();
+    const ok = await sSet('players', players);
+    if(!ok){ alert('Не удалось переименовать — проблема с сохранением.'); return; }
     await pushEvent(`Игрок переименован в ${newName.trim()}`);
     state.profiles = await fetchProfiles();
     renderHeader(); renderAdminPlayersList();
   }));
   el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
-    if(!confirm('Удалить игрока? Его логин в Supabase Auth останется (полное удаление аккаунта требует служебного ключа), но профиль/баллы исчезнут из игры.')) return;
-    const { error } = await sbClient.rpc('admin_delete_profile', { target_id: btn.dataset.del, admin_pw: ADMIN_PASSWORD });
-    if(error){ alert('Не удалось удалить: ' + error.message); return; }
+    if(!confirm('Удалить игрока из этого сезона? Аккаунт из готового списка можно будет использовать заново позже.')) return;
+    const players = (await sGet('players', [])).filter(p=>p.id!==btn.dataset.del);
+    const ok = await sSet('players', players);
+    if(!ok){ alert('Не удалось удалить — проблема с сохранением.'); return; }
     state.profiles = await fetchProfiles();
     renderHeader(); renderAdminPlayersList();
   }));
@@ -1772,12 +1870,13 @@ function timeAgo(ts){
   return Math.floor(s/86400)+' дн назад';
 }
 
-/* ============ INIT — restore an existing Supabase session automatically (real session, not a manual localStorage hack) ============ */
+/* ============ INIT — узнаём вернувшегося игрока по id, сохранённому в localStorage этого устройства ============ */
 (async function init(){
   if(sbClient){
-    const { data: { session } } = await sbClient.auth.getSession();
-    if(session && session.user){
-      const profile = await fetchMyProfile(session.user.id);
+    const savedId = await pGet('my_player_id', null);
+    if(savedId){
+      await ensurePlayersSeeded();
+      const profile = await fetchMyProfile(savedId);
       if(profile){
         state.me = profile;
         document.getElementById('welcome').style.display = 'none';
