@@ -587,7 +587,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";
 const SUPABASE_URL = SUPABASE_URL_RAW.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/,'');
 
 /* ============ CONSTANTS ============ */
-const ADMIN_PASSWORD_DEFAULT = "zYvgoEuVFjiS"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
+const ADMIN_PASSWORD_DEFAULT = "454512454512"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
 async function getAdminPassword(){
   const stored = await sGet('admin_password_override', null);
   return stored || ADMIN_PASSWORD_DEFAULT;
