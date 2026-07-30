@@ -320,6 +320,8 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 .chat-row button:hover, .action-btn:hover{ background:var(--ember); color:#140c06; box-shadow:0 0 20px rgba(201,124,44,.5);}
 .chat-row button:active, .action-btn:active{ transform: scale(.96);}
 .tagger-line{ margin:12px 0; font-size:15px;}
+#global-tagger-banner{ display:none; text-align:center; padding:8px 14px; background:rgba(201,124,44,0.12); border-bottom:1px solid var(--ember); font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--ember-bright); letter-spacing:.03em; }
+#global-tagger-banner b{ font-size:15px; }
 .tagger-line b{ color:var(--ember-bright);}
 .geo-list{ margin-top:10px; font-size:13px; color:var(--ash); font-family:'JetBrains Mono',monospace;}
 
@@ -459,6 +461,8 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 
@@ -509,8 +513,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 <div id="app">
   <header>
     <div class="logo">EPISODE</div>
-    <div class="mini-lb" id="mini-lb"></div>
-    <nav id="main-nav">
+    <nav id="main-nav" style="flex:1; justify-content:center;">
       <button data-view="home" class="active">Главная</button>
       <button data-view="players">Игроки</button>
       <button data-view="episodes">Главы</button>
@@ -521,6 +524,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     </nav>
     <button id="logout-btn" class="small-btn" title="Выйти из аккаунта">Выйти</button>
   </header>
+  <div id="global-tagger-banner"></div>
 
   <main>
     <div class="view active" id="view-home">
@@ -586,8 +590,19 @@ const SUPABASE_ANON_KEY = "sb_publishable_qQNhVQK7zqfTrjyXCzB3lQ_X3UPYSHz";
 // Автоматически срезаем случайно вставленный хвост /rest/v1/ и завершающий слэш — client ожидает только базовый домен проекта.
 const SUPABASE_URL = SUPABASE_URL_RAW.replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/,'');
 
+/* ============ FIREBASE CONFIG (push-уведомления) ============ */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB4rt_FSxNoF1eg1Ac422VQ_IRadLFwOCk",
+  authDomain: "episode-push.firebaseapp.com",
+  projectId: "episode-push",
+  storageBucket: "episode-push.firebasestorage.app",
+  messagingSenderId: "562430857661",
+  appId: "1:562430857661:web:9467c3099c2d4552a6c2d4"
+};
+const FIREBASE_VAPID_KEY = "BPnnb3AHjfqWyqsAv7c4BFIeTHoIPJxxkBqbMCVR8Ft4GSnVXu3IgwiQmU4qajgYEvApxDEk2osQp52o093TQUw";
+
 /* ============ CONSTANTS ============ */
-const ADMIN_PASSWORD_DEFAULT = "454512454512"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
+const ADMIN_PASSWORD_DEFAULT = "zYvgoEuVFjiS"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
 async function getAdminPassword(){
   const stored = await sGet('admin_password_override', null);
   return stored || ADMIN_PASSWORD_DEFAULT;
@@ -689,6 +704,7 @@ async function handleLiveUpdate(){
   state.episodes = await sGet('episodes', {});
   state.episodeOverrides = await sGet('episode_overrides', {});
   renderHeader();
+  renderGlobalTaggerBanner();
   const activeBtn = document.querySelector('#main-nav button.active');
   const activeView = activeBtn ? activeBtn.dataset.view : 'home';
   if(activeView === 'home') renderHome();
@@ -1051,6 +1067,15 @@ function showPointsToast(name, delta, reason){
   layer.appendChild(el);
   setTimeout(()=> el.remove(), 4200);
 }
+function showMessageToast(title, body){
+  const layer = document.getElementById('toast-layer');
+  if(!layer) return;
+  const el = document.createElement('div');
+  el.className = 'points-toast';
+  el.innerHTML = `<span class="icon">🔔</span><span class="txt"><b>${escapeHtml(title)}</b>${body? ' — '+escapeHtml(body):''}</span>`;
+  layer.appendChild(el);
+  setTimeout(()=> el.remove(), 4200);
+}
 
 /* ============ BACKGROUND POLLERS: points diff toasts + global countdown banner ============ */
 let lastPointsSnapshot = {};
@@ -1070,6 +1095,8 @@ function startBackgroundPollers(){
       lastPointsSnapshot[p.id] = p.points;
     });
     state.profiles = profiles;
+    state.episodes = await sGet('episodes', {});
+    renderGlobalTaggerBanner();
     if(document.getElementById('view-home').classList.contains('active')) renderHeader();
   }, 15000);
   setInterval(tickGlobalCountdownDisplay, 1000);
@@ -1146,12 +1173,25 @@ async function refreshAll(){
   state.adminLight = await pGet('admin_theme_light', false);
   renderHeader();
   renderHome();
+  renderGlobalTaggerBanner();
+}
+
+function renderGlobalTaggerBanner(){
+  const banner = document.getElementById('global-tagger-banner');
+  if(!banner) return;
+  const active = EPISODES.find(e=> e.showTagger && (state.episodes[e.id]?.status)==='active');
+  const taggerId = active ? state.episodes[active.id]?.tagger : null;
+  if(active && taggerId){
+    const tagger = state.profiles.find(p=>p.id===taggerId);
+    banner.innerHTML = `⚡ ${escapeHtml(active.name)} — сейчас водит: <b>${escapeHtml(tagger?.name || '—')}</b>`;
+    banner.style.display = 'block';
+  } else {
+    banner.style.display = 'none';
+  }
 }
 
 function renderHeader(){
-  const sorted = [...state.profiles].sort((a,b)=> b.points - a.points).slice(0,3);
-  const lb = document.getElementById('mini-lb');
-  lb.innerHTML = sorted.map((p,i)=> `<span>${i+1}. ${escapeHtml(p.name)} <b>${p.points}</b></span>`).join('') || '<span>пока нет данных</span>';
+  /* top mini-leaderboard removed on purpose — points aren't shown prominently anymore, so people don't fixate on rank */
 }
 
 /* ============ HOME ============ */
@@ -1175,7 +1215,7 @@ function renderHome(){
   } else {
     banner.innerHTML = '';
   }
-  const sorted = [...state.profiles].sort((a,b)=> b.points - a.points);
+  const sorted = [...state.profiles].filter(p=>p.displayNameSet).sort((a,b)=> b.points - a.points);
   const tbody = document.getElementById('lb-body');
   tbody.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img class="avatar-sm" src="${p.photo}">` : `<span class="avatar-sm" style="display:inline-flex;align-items:center;justify-content:center;background:var(--ash-dim);">${escapeHtml(p.name[0]||'?')}</span>`;
@@ -1204,7 +1244,7 @@ function animateCounts(){
 /* ============ PLAYERS ============ */
 function renderPlayers(){
   const grid = document.getElementById('players-grid');
-  const sorted = [...state.profiles].sort((a,b)=> b.points - a.points);
+  const sorted = [...state.profiles].filter(p=>p.displayNameSet).sort((a,b)=> b.points - a.points);
   grid.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
     return `<div class="player-card" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
@@ -1251,25 +1291,38 @@ async function openEpisode(id){
   let html = `<h2 class="section-title" style="display:flex; align-items:center; gap:14px;"><span class="ep-icon" style="font-size:30px;">${ep.icon}</span>${CHAPTER_WORD} ${id}: ${escapeHtml(ep.name)}</h2><div class="rules-block">${escapeHtml(ep.rules)}</div>`;
 
   if(data.status === 'active'){
+    const isTagger = ep.showTagger && data.tagger === state.me.id;
     const actionsHtml = ep.actions ? `
       <div class="game-actions" style="margin:14px 0; padding:12px; border:1px solid var(--ash-dim); border-radius:2px;">
-        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">ДЕЙСТВИЯ ЭТОЙ ИГРЫ</div>
+        ${ep.showTagger ? '' : '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">ДЕЙСТВИЯ</div>'}
         ${ep.actions.map(a=>{
           if(a.needsTarget){
             return `<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px; align-items:center;">
-              <select class="paper-select action-target-select" data-key="${a.key}" style="flex:1; min-width:140px;">${state.profiles.filter(p=>p.id!==state.me.id).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
+              <select class="paper-select action-target-select" data-key="${a.key}" style="flex:1; min-width:140px;">${state.profiles.filter(p=>p.id!==state.me.id && p.displayNameSet).map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
               <button class="action-btn game-action-btn" data-key="${a.key}">${escapeHtml(a.label)}</button>
             </div>`;
           }
           return `<button class="action-btn game-action-btn" data-key="${a.key}" style="margin:0 8px 8px 0;">${escapeHtml(a.label)}</button>`;
         }).join('')}
       </div>` : '';
+
+    let taggerBlock = '';
+    if(ep.showTagger){
+      if(!data.tagger){
+        taggerBlock = `<div style="margin:14px 0;"><button class="action-btn" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">Выберет случайного водящего среди тех, кто уже зашёл на сайт.</div></div>`;
+      } else if(isTagger){
+        taggerBlock = `<div class="tagger-line" style="color:var(--ember-bright);">Сейчас водишь ты!</div>${actionsHtml}`;
+      } else {
+        taggerBlock = `<div class="tagger-line">Сейчас водит: <b>${escapeHtml(state.profiles.find(p=>p.id===data.tagger)?.name || '—')}</b></div>`;
+      }
+    }
+
     html += `<div class="live-block"><div class="live-tag">● В ЭФИРЕ</div>
-      <div class="tagger-line">Держит роль сейчас: <b id="tagger-name">—</b></div>
-      <button class="action-btn" id="pass-role-btn">Я передал роль</button>
-      <button class="action-btn" id="share-geo-btn" style="margin-left:8px;">Поделиться геолокацией</button>
+      ${taggerBlock}
+      ${(!ep.showTagger) ? actionsHtml : ''}
+      <button class="action-btn" id="share-geo-btn">Поделиться геолокацией</button>
+      <div id="geo-map-${id}" style="height:260px; border-radius:2px; margin-top:10px; display:none;"></div>
       <div class="geo-list" id="geo-list"></div>
-      ${actionsHtml}
       <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат главы</h3>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
@@ -1282,23 +1335,31 @@ async function openEpisode(id){
   document.getElementById('episode-detail-content').innerHTML = html;
 
   if(data.status === 'active'){
-    document.getElementById('tagger-name').textContent = data.tagger ? (state.profiles.find(p=>p.id===data.tagger)?.name || '—') : '—';
-    document.getElementById('pass-role-btn').addEventListener('click', async ()=>{
+    const startBtn = document.getElementById('start-tagger-btn');
+    if(startBtn) startBtn.addEventListener('click', async ()=>{
+      const pool = state.profiles.filter(p=>p.displayNameSet);
+      if(pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
+      const chosen = pool[Math.floor(Math.random()*pool.length)];
       const eps = await sGet('episodes', {});
       eps[id] = eps[id] || {};
-      eps[id].tagger = state.me.id;
+      eps[id].tagger = chosen.id;
       await sSet('episodes', eps);
-      await pushEvent(`${state.me.name} принял роль в главе «${ep.name}»`);
+      await pushEvent(`🎲 Игра началась! Первым водит: ${chosen.name}`);
       openEpisode(id);
     });
+
     document.getElementById('share-geo-btn').addEventListener('click', ()=>{
+      if(state.me.consentGeo === false){
+        alert('У тебя выключено согласие на геолокацию в Профиле → Настройки согласия. Включи галочку там, потом попробуй снова.');
+        return;
+      }
       if(!navigator.geolocation){ alert('Геолокация недоступна в этом браузере'); return; }
       navigator.geolocation.getCurrentPosition(async (pos)=>{
         const geo = await sGet('geo_ep'+id, {});
         geo[state.me.id] = { name: state.me.name, lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() };
         await sSet('geo_ep'+id, geo);
         renderGeoList(id);
-      }, ()=> alert('Не удалось получить геолокацию — проверь разрешения браузера'));
+      }, ()=> alert('Не удалось получить геолокацию — проверь, что разрешил доступ в браузере'));
     });
     renderGeoList(id);
     loadChat(id);
@@ -1308,10 +1369,10 @@ async function openEpisode(id){
       const action = (ep.actions||[]).find(a=>a.key===btn.dataset.key);
       if(!action) return;
       btn.disabled = true;
-      let text;
+      let text, targetPlayer = null;
       if(action.needsTarget){
         const sel = document.querySelector(`.action-target-select[data-key="${action.key}"]`);
-        const targetPlayer = state.profiles.find(p=>p.id===sel.value);
+        targetPlayer = state.profiles.find(p=>p.id===sel.value);
         if(!targetPlayer){ btn.disabled=false; return; }
         text = action.announce(state.me.name, targetPlayer.name);
       } else {
@@ -1321,20 +1382,57 @@ async function openEpisode(id){
       chat.push({ player: 'Система', text, ts: Date.now() });
       await sSet('chat_ep'+id, chat.slice(-50));
       await pushEvent(text);
+
+      /* if this chapter tracks a single "tagger" (Городские Салки), tagging someone passes the role to them */
+      if(ep.showTagger && targetPlayer){
+        const eps = await sGet('episodes', {});
+        eps[id] = eps[id] || {};
+        eps[id].tagger = targetPlayer.id;
+        await sSet('episodes', eps);
+      }
+
       await loadChat(id);
-      btn.disabled = false;
+      openEpisode(id);
     }));
     if(state.chatPoll) clearInterval(state.chatPoll);
-    state.chatPoll = setInterval(()=> loadChat(id), 4500);
+    state.chatPoll = setInterval(()=> { loadChat(id); renderGeoList(id); }, 4500);
   }
 }
 
+
+const geoMaps = {}; // one Leaflet map instance per chapter id, kept alive while its view is open
 async function renderGeoList(id){
   const geo = await sGet('geo_ep'+id, {});
   const el = document.getElementById('geo-list');
+  const mapHolder = document.getElementById('geo-map-'+id);
   if(!el) return;
-  const entries = Object.values(geo);
-  el.innerHTML = entries.length ? entries.map(g=> `${escapeHtml(g.name)} — координаты отправлены ${timeAgo(g.ts)}`).join('<br>') : 'Пока никто не поделился локацией';
+
+  const THREE_MIN = 3*60*1000;
+  const now = Date.now();
+  const fresh = {};
+  let expired = false;
+  Object.entries(geo).forEach(([pid,g])=>{ if(now - g.ts < THREE_MIN) fresh[pid] = g; else expired = true; });
+  if(expired) await sSet('geo_ep'+id, fresh); // clean up old pins from storage so they don't linger forever
+
+  const entries = Object.values(fresh);
+  el.innerHTML = entries.length ? entries.map(g=> `📍 ${escapeHtml(g.name)} — ${timeAgo(g.ts)} (точка исчезнет через ${Math.max(0, Math.ceil((THREE_MIN-(now-g.ts))/60000))} мин)`).join('<br>') : 'Пока никто не поделился локацией';
+
+  if(mapHolder && typeof L !== 'undefined'){
+    mapHolder.style.display = 'block';
+    if(!geoMaps[id]){
+      const map = L.map(mapHolder).setView([51.6720, 39.1843], 12); // Воронеж по умолчанию, карту можно свободно двигать/приближать
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(map);
+      geoMaps[id] = { map, markers:{} };
+    }
+    const gm = geoMaps[id];
+    Object.keys(gm.markers).forEach(pid=>{ if(!fresh[pid]){ gm.map.removeLayer(gm.markers[pid]); delete gm.markers[pid]; } });
+    Object.entries(fresh).forEach(([pid,g])=>{
+      if(gm.markers[pid]) gm.markers[pid].setLatLng([g.lat,g.lng]);
+      else gm.markers[pid] = L.marker([g.lat,g.lng]).addTo(gm.map).bindPopup(escapeHtml(g.name));
+    });
+    if(entries.length === 1) gm.map.setView([entries[0].lat, entries[0].lng], 15);
+    setTimeout(()=> gm.map.invalidateSize(), 150);
+  }
 }
 
 async function loadChat(id){
@@ -1548,6 +1646,17 @@ function renderProfile(){
       <div class="mono" style="color:var(--ash);font-size:12px;margin-top:6px;">№${p.number} · ${p.points} баллов</div>
     </div>
     <h2 class="section-title">Ачивки</h2>${badges}
+    <h2 class="section-title" style="margin-top:26px;">⚙️ Настройки согласия</h2>
+    <div style="max-width:360px; margin:0 auto; font-size:14px;">
+      <label style="display:flex; align-items:center; gap:10px; margin-bottom:12px; cursor:pointer;">
+        <input type="checkbox" id="consent-geo" ${p.consentGeo ? 'checked' : ''} style="width:18px; height:18px;">
+        Разрешаю делиться моей геолокацией во время активных игр
+      </label>
+      <div style="font-size:12px; color:var(--ash); margin-bottom:16px;">Можно включить или выключить в любой момент. Если случайно нажал(а) «не разрешаю» браузеру раньше — включи здесь и попробуй поделиться локацией заново, браузер спросит снова.</div>
+
+      <button class="small-btn" id="push-enable-btn" style="width:100%; padding:10px;">${p.pushToken ? '🔔 Уведомления включены' : '🔔 Разрешить уведомления'}</button>
+      <div id="push-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px; text-align:center;"></div>
+    </div>
     <h2 class="section-title" style="margin-top:26px;">🔒 Сменить пароль</h2>
     <div style="max-width:320px; margin:0 auto;">
       <input type="password" id="pw-current-input" class="paper-input" placeholder="Текущий пароль" style="margin-bottom:10px;">
@@ -1557,6 +1666,38 @@ function renderProfile(){
       <div id="pw-change-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px; text-align:center;"></div>
     </div>
   `;
+
+  document.getElementById('consent-geo').addEventListener('change', async (e)=>{
+    const players = await sGet('players', []);
+    const target = players.find(x=>x.id===p.id);
+    if(!target) return;
+    target.consentGeo = e.target.checked;
+    await sSet('players', players);
+    state.me = target; state.profiles = await fetchProfiles();
+  });
+
+  document.getElementById('push-enable-btn').addEventListener('click', async ()=>{
+    const btn = document.getElementById('push-enable-btn');
+    const status = document.getElementById('push-status');
+    btn.disabled = true; status.textContent = 'Спрашиваю разрешение...'; status.style.color = 'var(--ember-bright)';
+    if(typeof window.enablePushNotifications !== 'function'){
+      status.textContent = 'Firebase ещё не загрузился — подожди секунду и попробуй снова.'; status.style.color = '#ff8a75'; btn.disabled = false; return;
+    }
+    const result = await window.enablePushNotifications();
+    if(!result.ok){
+      status.textContent = 'Не получилось: ' + result.error; status.style.color = '#ff8a75'; btn.disabled = false; return;
+    }
+    const players = await sGet('players', []);
+    const target = players.find(x=>x.id===p.id);
+    if(target){
+      target.pushToken = result.token;
+      await sSet('players', players);
+      state.me = target; state.profiles = await fetchProfiles();
+    }
+    status.textContent = 'Готово ✓ Уведомления включены на этом устройстве.'; status.style.color = 'var(--ember-bright)';
+    btn.textContent = '🔔 Уведомления включены';
+    btn.disabled = false;
+  });
 
   document.getElementById('pw-change-btn').addEventListener('click', async ()=>{
     const cur = document.getElementById('pw-current-input').value.trim();
@@ -1698,6 +1839,13 @@ async function renderAdmin(){
       <div id="admin-pw-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px;"></div>
     </div>
   `;
+  html += `<h2 class="section-title" style="margin-top:30px;">🚩 Ночной дозор — команды</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Делит всех, кто уже зашёл на сайт, случайно на две команды. Видно только тебе здесь — на страницу главы можно вывести результат отдельно, если нужно.</div>
+      <button class="small-btn" id="split-teams-btn">🎲 Разделить на команды</button>
+      <div id="teams-result" style="margin-top:12px; font-family:'JetBrains Mono',monospace; font-size:13px;"></div>
+    </div>
+  `;
   html += `<h2 class="section-title" style="margin-top:30px;">Корректировка баллов</h2>
     <div class="admin-pts-row">
       <select id="pts-player" class="paper-select"></select>
@@ -1788,6 +1936,19 @@ async function renderAdmin(){
   });
   renderAdminEventsList();
 
+  document.getElementById('split-teams-btn').addEventListener('click', async ()=>{
+    const pool = state.profiles.filter(p=>p.displayNameSet);
+    if(pool.length < 2){ alert('Нужно минимум 2 зашедших игрока.'); return; }
+    const shuffled = [...pool].sort(()=> Math.random()-0.5);
+    const half = Math.ceil(shuffled.length/2);
+    const teams = { A: shuffled.slice(0,half).map(p=>p.id), B: shuffled.slice(half).map(p=>p.id) };
+    await sSet('teams_ep4', teams);
+    await pushEvent('🚩 Ночной дозор — команды разделены заново');
+    renderTeamsResult(teams);
+  });
+  const savedTeams = await sGet('teams_ep4', null);
+  if(savedTeams) renderTeamsResult(savedTeams);
+
   const ptsSelect = document.getElementById('pts-player');
   ptsSelect.innerHTML = state.profiles.map(p=> `<option value="${p.id}">${escapeHtml(p.name)} (№${p.number})</option>`).join('');
   document.getElementById('pts-apply').addEventListener('click', async ()=>{
@@ -1809,10 +1970,12 @@ async function renderAdminEventsList(){
   el.innerHTML = events.length ? events.map(e=> `<div class="admin-ep-row">
       <div>${escapeHtml(e.title)} <span class="status-badge status-${e.status==='open'?'active':'locked'}" style="margin-left:8px;">${e.status==='open'?'Открыто':'Закрыто'}</span></div>
       <div style="display:flex; gap:6px;">
+        <button class="small-btn" data-open-ev="${e.id}">Открыть игру</button>
         <button class="small-btn" data-toggle-ev="${e.id}">${e.status==='open' ? 'Закрыть' : 'Открыть'}</button>
         <button class="small-btn danger" data-del-ev="${e.id}">Удалить</button>
       </div>
     </div>`).join('') : '<div class="empty-state">Пока нет созданных событий</div>';
+  el.querySelectorAll('[data-open-ev]').forEach(btn=> btn.addEventListener('click', ()=> openCustomEvent(btn.dataset.openEv)));
   el.querySelectorAll('[data-toggle-ev]').forEach(btn=> btn.addEventListener('click', async ()=>{
     const events = await sGet('custom_events', []);
     const ev = events.find(x=>x.id===btn.dataset.toggleEv);
@@ -1829,10 +1992,27 @@ async function renderAdminEventsList(){
     renderAdminEventsList();
   }));
 }
+function renderTeamsResult(teams){
+  const el = document.getElementById('teams-result');
+  if(!el) return;
+  const nameOf = id=> state.profiles.find(p=>p.id===id)?.name || '?';
+  el.innerHTML = `<b style="color:var(--ember-bright);">Команда A:</b> ${teams.A.map(nameOf).map(escapeHtml).join(', ') || '—'}<br><b style="color:var(--ember-bright);">Команда B:</b> ${teams.B.map(nameOf).map(escapeHtml).join(', ') || '—'}`;
+}
 function renderAdminPlayersList(){
   const el = document.getElementById('admin-players-list');
   if(!el) return;
-  el.innerHTML = state.profiles.map(p=> `<div class="admin-ep-row"><div>${escapeHtml(p.name)} · №${p.number} · ${p.points} б.</div><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="small-btn" data-plus="${p.id}">+1</button><button class="small-btn" data-minus="${p.id}">−1</button><button class="small-btn" data-rename="${p.id}">✎ Имя</button><button class="small-btn danger" data-del="${p.id}">Удалить</button></div></div>`).join('') || '<div class="empty-state">Пока нет игроков</div>';
+  el.innerHTML = `<button class="small-btn danger" id="reset-all-points-btn" style="margin-bottom:12px;">Обнулить баллы всем</button>` +
+    (state.profiles.map(p=> `<div class="admin-ep-row"><div>${escapeHtml(p.name)} · №${p.number} · ${p.points} б.</div><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="small-btn" data-plus="${p.id}">+1</button><button class="small-btn" data-minus="${p.id}">−1</button><button class="small-btn" data-rename="${p.id}">✎ Имя</button><button class="small-btn danger" data-del="${p.id}">Удалить</button></div></div>`).join('') || '<div class="empty-state">Пока нет игроков</div>');
+  document.getElementById('reset-all-points-btn').addEventListener('click', async ()=>{
+    if(!confirm('Обнулить баллы абсолютно всем игрокам? Это нельзя отменить.')) return;
+    const players = await sGet('players', []);
+    players.forEach(p=> p.points = 0);
+    const ok = await sSet('players', players);
+    if(!ok){ alert('Не удалось сохранить — попробуй ещё раз.'); return; }
+    await pushEvent('Организатор обнулил баллы всем игрокам');
+    state.profiles = await fetchProfiles();
+    renderAdminPlayersList();
+  });
   el.querySelectorAll('[data-plus]').forEach(btn=> btn.addEventListener('click', async ()=>{ await applyPoints(btn.dataset.plus, 1); renderAdminPlayersList(); }));
   el.querySelectorAll('[data-minus]').forEach(btn=> btn.addEventListener('click', async ()=>{ await applyPoints(btn.dataset.minus, -1); renderAdminPlayersList(); }));
   el.querySelectorAll('[data-rename]').forEach(btn=> btn.addEventListener('click', async ()=>{
@@ -1890,6 +2070,44 @@ function timeAgo(ts){
   }
   buildTitle();
 })();
+</script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+  import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js";
+
+  let messaging = null;
+  try {
+    const fbApp = initializeApp(FIREBASE_CONFIG);
+    messaging = getMessaging(fbApp);
+  } catch(e){ console.warn('Firebase не инициализировался:', e); }
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('firebase-messaging-sw.js').catch(e=> console.warn('Service worker не зарегистрировался:', e));
+  }
+
+  // Показываем уведомление внутри сайта, если сообщение пришло, пока вкладка открыта и активна
+  if(messaging){
+    onMessage(messaging, (payload)=>{
+      if(typeof showMessageToast === 'function'){
+        showMessageToast(payload.notification?.title || 'EPISODE', payload.notification?.body || '');
+      }
+    });
+  }
+
+  window.enablePushNotifications = async function(){
+    if(!messaging){ return { ok:false, error:'Firebase не подключён' }; }
+    if(!('Notification' in window)){ return { ok:false, error:'Браузер не поддерживает уведомления' }; }
+    try{
+      const permission = await Notification.requestPermission();
+      if(permission !== 'granted') return { ok:false, error:'Разрешение не дано' };
+      const token = await getToken(messaging, { vapidKey: FIREBASE_VAPID_KEY });
+      if(!token) return { ok:false, error:'Не удалось получить токен устройства' };
+      return { ok:true, token };
+    } catch(e){
+      return { ok:false, error: (e && e.message) ? e.message : String(e) };
+    }
+  };
 </script>
 
 </body>
