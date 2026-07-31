@@ -485,6 +485,28 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
   position:fixed; top:0; left:0; right:0; z-index:70;
   display:flex; flex-direction:column; align-items:center; pointer-events:none; padding-top:14px;
 }
+#money-rain-layer{ position:fixed; inset:0; z-index:75; pointer-events:none; overflow:hidden; display:none; }
+#points-burst-layer{ position:fixed; inset:0; z-index:74; pointer-events:none; overflow:hidden; }
+.burst-particle{
+  position:absolute; top:50%; font-size:22px; opacity:0;
+  animation-name: burstFly; animation-timing-function: cubic-bezier(.15,.7,.3,1); animation-fill-mode:forwards;
+}
+@keyframes burstFly{
+  0%{ opacity:0; transform:translate(0,0) scale(.4) rotate(0deg);}
+  15%{ opacity:1; transform:translate(var(--bx1), var(--by1)) scale(1.15) rotate(var(--br));}
+  100%{ opacity:0; transform:translate(var(--bx2), var(--by2)) scale(.7) rotate(var(--br2));}
+}
+.money-bill{
+  position:absolute; top:-60px; font-size:32px; opacity:0;
+  animation-name: moneyFall; animation-timing-function: ease-in; animation-fill-mode: forwards;
+  filter: drop-shadow(0 0 6px rgba(0,0,0,.5));
+}
+@keyframes moneyFall{
+  0%{ transform:translateY(0) rotate(0deg); opacity:0;}
+  8%{ opacity:1;}
+  92%{ opacity:1;}
+  100%{ transform:translateY(112vh) rotate(var(--spin, 340deg)); opacity:0;}
+}
 .points-toast{
   margin-top:10px; background:linear-gradient(135deg,#1c1208,#2a1a0f);
   border:1px solid var(--ember-bright); padding:14px 24px; border-radius:4px;
@@ -549,6 +571,8 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 <div id="burn-transition"></div>
 <div id="shock-ring"></div>
 <div id="toast-layer"></div>
+<div id="money-rain-layer"></div>
+<div id="points-burst-layer"></div>
 <div id="global-countdown-banner"></div>
 <div id="save-warning-banner"></div>
 <div id="supabase-diag"></div>
@@ -593,7 +617,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     <nav id="main-nav" style="flex:1; justify-content:center;">
       <button data-view="home" class="active">Главная</button>
       <button data-view="players">Игроки</button>
-      <button data-view="episodes">Главы</button>
+      <button data-view="episodes">Эпизоды</button>
       <button data-view="events">События</button>
       <button data-view="profile">Профиль</button>
     </nav>
@@ -612,7 +636,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     <div class="drawer-nav">
       <button data-view="home"><span class="ic">🏠</span> Главная</button>
       <button data-view="players"><span class="ic">👥</span> Игроки</button>
-      <button data-view="episodes"><span class="ic">📖</span> Главы</button>
+      <button data-view="episodes"><span class="ic">📖</span> Эпизоды</button>
       <button data-view="events"><span class="ic">🎲</span> События</button>
       <div class="drawer-divider"></div>
       <button data-view="profile"><span class="ic">👤</span> Профиль</button>
@@ -645,7 +669,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     </div>
 
     <div class="view" id="view-episodes">
-      <h2 class="section-title">Главы</h2>
+      <h2 class="section-title">Эпизоды</h2>
       <div id="episodes-list"></div>
     </div>
 
@@ -717,7 +741,7 @@ async function sendPushToAll(title, body){
 }
 
 /* ============ CONSTANTS ============ */
-const ADMIN_PASSWORD_DEFAULT = "454512454512"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
+const ADMIN_PASSWORD_DEFAULT = "zYvgoEuVFjiS"; // пароль по умолчанию — сложный, чтобы не подобрали случайно. Меняется через саму Админку (сохраняется в базе, код трогать не нужно).
 async function getAdminPassword(){
   const stored = await sGet('admin_password_override', null);
   return stored || ADMIN_PASSWORD_DEFAULT;
@@ -744,7 +768,7 @@ const EPISODES = [
     ]
   }
 ];
-const CHAPTER_WORD = "Глава";
+const CHAPTER_WORD = "Эпизод";
 
 let state = { profiles:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:false, currentEpisode:null, chatPoll:null, pendingSave:false };
 
@@ -813,6 +837,7 @@ if(sbClient){
     .subscribe();
 }
 
+let __lastKnownPrizePool = null;
 async function handleLiveUpdate(){
   if(document.getElementById('app').style.display === 'none') return; // not logged in yet
   state.profiles = await fetchProfiles();
@@ -820,6 +845,10 @@ async function handleLiveUpdate(){
   state.episodeOverrides = await sGet('episode_overrides', {});
   renderHeader();
   renderGlobalTaggerBanner();
+  updateHeaderBank();
+  const currentPool = await sGet('prize_pool', 0);
+  if(__lastKnownPrizePool !== null && currentPool !== __lastKnownPrizePool) playMoneyRain();
+  __lastKnownPrizePool = currentPool;
   const activeBtn = document.querySelector('#main-nav button.active');
   const activeView = activeBtn ? activeBtn.dataset.view : 'home';
   if(activeView === 'home') renderHome();
@@ -1166,6 +1195,7 @@ function enterApp(){
         stopWelcomeEffects();
         await refreshAll();
         startBackgroundPollers();
+        if(typeof handleDeepLinkOnEnter === 'function') handleDeepLinkOnEnter();
         resolve();
       } catch(e){
         document.getElementById('welcome').style.display = 'flex';
@@ -1211,6 +1241,38 @@ function showPointsToast(name, delta, reason){
   el.innerHTML = `<span class="icon">${icon}</span><span class="txt"><b>${escapeHtml(name)}</b> ${delta>=0?'получил(а)':'потерял(а)'} <b>${Math.abs(delta)}</b> ${word}${reason? ' — '+escapeHtml(reason):''}</span>`;
   layer.appendChild(el);
   setTimeout(()=> el.remove(), 4200);
+  playPointsBurst(delta >= 0);
+}
+
+/* Частицы вылетают одновременно с левого и правого края экрана — короткий, но заметный акцент к каждому начислению баллов */
+function playPointsBurst(positive){
+  const layer = document.getElementById('points-burst-layer');
+  if(!layer) return;
+  const goodEmojis = ['✨','⭐','🔥','💫'];
+  const badEmojis = ['💨','⚠️','🌫️'];
+  const emojis = positive ? goodEmojis : badEmojis;
+  const COUNT = 14;
+  for(let i=0;i<COUNT;i++){
+    const fromLeft = i % 2 === 0;
+    const p = document.createElement('div');
+    p.className = 'burst-particle';
+    p.textContent = emojis[Math.floor(Math.random()*emojis.length)];
+    const startY = 20 + Math.random()*60;
+    const travel = 30 + Math.random()*40;
+    const rise = -20 - Math.random()*40;
+    p.style.top = startY + 'vh';
+    p.style.left = fromLeft ? '-30px' : 'calc(100% + 30px)';
+    p.style.setProperty('--bx1', (fromLeft? travel : -travel) + 'vw');
+    p.style.setProperty('--by1', (rise*0.4) + 'vh');
+    p.style.setProperty('--bx2', (fromLeft? travel*1.6 : -travel*1.6) + 'vw');
+    p.style.setProperty('--by2', rise + 'vh');
+    p.style.setProperty('--br', (Math.random()*180-90) + 'deg');
+    p.style.setProperty('--br2', (Math.random()*360-180) + 'deg');
+    p.style.animationDuration = (1.1 + Math.random()*0.7) + 's';
+    p.style.animationDelay = (Math.random()*0.25) + 's';
+    layer.appendChild(p);
+    setTimeout(()=> p.remove(), 2200);
+  }
 }
 function showMessageToast(title, body){
   const layer = document.getElementById('toast-layer');
@@ -1220,6 +1282,33 @@ function showMessageToast(title, body){
   el.innerHTML = `<span class="icon">🔔</span><span class="txt"><b>${escapeHtml(title)}</b>${body? ' — '+escapeHtml(body):''}</span>`;
   layer.appendChild(el);
   setTimeout(()=> el.remove(), 4200);
+}
+
+/* Дождь из купюр на весь экран — играется примерно 18 секунд, когда банк обновляется */
+function playMoneyRain(){
+  const layer = document.getElementById('money-rain-layer');
+  if(!layer) return;
+  layer.style.display = 'block';
+  layer.innerHTML = '';
+  const bills = ['💵','💶','💴','💷'];
+  const DURATION_MS = 18000;
+  const spawnInterval = setInterval(()=>{
+    const bill = document.createElement('div');
+    bill.className = 'money-bill';
+    bill.textContent = bills[Math.floor(Math.random()*bills.length)];
+    const left = Math.random()*100;
+    const fallTime = 3.2 + Math.random()*2.4;
+    const spin = (Math.random()>0.5 ? 1 : -1) * (220 + Math.random()*260);
+    bill.style.left = left + 'vw';
+    bill.style.setProperty('--spin', spin+'deg');
+    bill.style.animationDuration = fallTime + 's';
+    layer.appendChild(bill);
+    setTimeout(()=> bill.remove(), fallTime*1000 + 200);
+  }, 160);
+  setTimeout(()=>{
+    clearInterval(spawnInterval);
+    setTimeout(()=>{ layer.style.display = 'none'; layer.innerHTML = ''; }, 3500);
+  }, DURATION_MS);
 }
 
 /* ============ BACKGROUND POLLERS: points diff toasts + global countdown banner ============ */
@@ -1400,20 +1489,51 @@ async function refreshAll(){
   renderGlobalTaggerBanner();
   updateDrawerUserCard();
   updateHeaderBank();
+  if(__lastKnownPrizePool === null) __lastKnownPrizePool = await sGet('prize_pool', 0);
 }
 
+let __countdownIntervalId = null;
 function renderGlobalTaggerBanner(){
   const banner = document.getElementById('global-tagger-banner');
   if(!banner) return;
-  const active = EPISODES.find(e=> e.showTagger && (state.episodes[e.id]?.status)==='active');
-  const taggerId = active ? state.episodes[active.id]?.tagger : null;
-  if(active && taggerId){
-    const tagger = state.profiles.find(p=>p.id===taggerId);
-    banner.innerHTML = `⚡ ${escapeHtml(active.name)} — сейчас водит: <b>${escapeHtml(tagger?.name || '—')}</b>`;
+  const active = EPISODES.find(e=> e.actions && (state.episodes[e.id]?.status)==='active' && state.episodes[e.id]?.started);
+  const data = active ? state.episodes[active.id] : null;
+  const taggerId = (active && active.showTagger) ? data?.tagger : null;
+  const endsAt = data ? data.endsAt : null;
+
+  if(__countdownIntervalId){ clearInterval(__countdownIntervalId); __countdownIntervalId = null; }
+
+  if(active){
+    const namePart = active.showTagger && taggerId
+      ? `⚡ ${escapeHtml(active.name)} — сейчас водит: <b>${escapeHtml(state.profiles.find(p=>p.id===taggerId)?.name || '—')}</b>`
+      : `⚡ Эпизод «${escapeHtml(active.name)}» идёт сейчас`;
     banner.style.display = 'block';
+    if(endsAt && endsAt > Date.now()){
+      const renderTick = ()=>{
+        const left = endsAt - Date.now();
+        if(left <= 0){
+          banner.innerHTML = `${namePart} <span class="mono" style="margin-left:10px; color:#ff8a75;">время вышло</span>`;
+          clearInterval(__countdownIntervalId); __countdownIntervalId = null;
+          return;
+        }
+        const h = Math.floor(left/3600000), m = Math.floor((left%3600000)/60000), s = Math.floor((left%60000)/1000);
+        const pad = n=> String(n).padStart(2,'0');
+        banner.innerHTML = `${namePart} <span class="mono" style="margin-left:10px;">⏱ ${pad(h)}:${pad(m)}:${pad(s)}</span>`;
+      };
+      renderTick();
+      __countdownIntervalId = setInterval(renderTick, 1000);
+    } else {
+      banner.innerHTML = namePart;
+    }
   } else {
     banner.style.display = 'none';
   }
+}
+
+/* Строит ссылку, которая при переходе сразу открывает нужный эпизод/событие после входа */
+function deepLink(kind, id){
+  const base = location.origin + location.pathname;
+  return `${base}?open=${kind}-${id}`;
 }
 
 function renderHeader(){
@@ -1528,10 +1648,14 @@ async function openEpisode(id){
       </div>` : '';
 
     let taggerBlock = '';
-    if(ep.showTagger){
-      if(!data.tagger){
-        taggerBlock = `<div style="margin:14px 0;"><button class="action-btn" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">Выберет случайного водящего среди тех, кто уже зашёл на сайт.</div></div>`;
-      } else if(isTagger){
+    if(ep.actions && !data.started){
+      /* Игра ещё не запущена — общая кнопка старта для ЛЮБОГО эпизода с действиями, не только с водящим */
+      const hint = ep.showTagger
+        ? 'Выберет случайного водящего среди тех, кто уже зашёл на сайт, и включит таймер.'
+        : 'Откроет действия этого эпизода всем и включит таймер (если задан).';
+      taggerBlock = `<div style="margin:14px 0;"><button class="action-btn" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">${hint}</div></div>`;
+    } else if(ep.showTagger && data.started){
+      if(isTagger){
         taggerBlock = `<div class="tagger-line" style="color:var(--ember-bright);">Сейчас водишь ты!</div>${actionsHtml}`;
       } else {
         taggerBlock = `<div class="tagger-line">Сейчас водит: <b>${escapeHtml(state.profiles.find(p=>p.id===data.tagger)?.name || '—')}</b></div>`;
@@ -1540,20 +1664,20 @@ async function openEpisode(id){
 
     html += `<div class="live-block"><div class="live-tag">● В ЭФИРЕ</div>
       ${taggerBlock}
-      ${(!ep.showTagger) ? actionsHtml : ''}
+      ${(ep.actions && !ep.showTagger && data.started) ? actionsHtml : ''}
       <button class="action-btn" id="share-geo-btn">Поделиться геолокацией</button>
       <div id="geo-map-${id}" style="height:260px; border-radius:2px; margin-top:10px; display:none;"></div>
       <div class="geo-list" id="geo-list"></div>
-      <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат главы</h3>
+      <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат эпизода</h3>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
       <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Что происходит</h3>
       <div id="episode-event-list"></div>
       </div>`;
   } else if(data.status === 'done'){
-    html += `<div class="empty-state">Глава завершена. Итоги учтены в общем счёте.</div>`;
+    html += `<div class="empty-state">Эпизод завершён. Итоги учтены в общем счёте.</div>`;
   } else if(data.status === 'locked'){
-    html += `<div class="empty-state">Глава пока закрыта.</div>`;
+    html += `<div class="empty-state">Эпизод пока закрыт.</div>`;
   }
   document.getElementById('episode-detail-content').innerHTML = html;
 
@@ -1561,22 +1685,29 @@ async function openEpisode(id){
     const startBtn = document.getElementById('start-tagger-btn');
     if(startBtn) startBtn.addEventListener('click', async ()=>{
       const pool = state.profiles.filter(p=>p.displayNameSet);
-      if(pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
-      const chosen = pool[Math.floor(Math.random()*pool.length)];
+      if(ep.showTagger && pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
+      const durationStr = prompt('На сколько минут запустить игру? (можно оставить пустым — тогда без таймера)', '30');
+      const minutes = parseInt(durationStr, 10);
       const eps = await sGet('episodes', {});
       eps[id] = eps[id] || {};
-      eps[id].tagger = chosen.id;
+      eps[id].started = true;
+      eps[id].endsAt = (minutes && minutes > 0) ? (Date.now() + minutes*60000) : null;
+      let chosen = null;
+      if(ep.showTagger){
+        chosen = pool[Math.floor(Math.random()*pool.length)];
+        eps[id].tagger = chosen.id;
+      }
       await sSet('episodes', eps);
-      await pushEvent(`🎲 Игра началась! Первым водит: ${chosen.name}`);
-      sendPushToAll('EPISODE', `${ep.name}: игра началась! Первым водит ${chosen.name}`);
+      await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
+      const link = deepLink('episode', id);
+      const durTxt = minutes>0 ? ` (на ${minutes} мин.)` : '';
+      const msg = chosen ? `🎲 Игра началась! Первым водит: ${chosen.name}${durTxt}` : `🎲 Эпизод «${ep.name}» начался!${durTxt}`;
+      await pushEvent(msg);
+      sendPushToAll('EPISODE', `${msg}\n${link}`);
       openEpisode(id);
     });
 
     document.getElementById('share-geo-btn').addEventListener('click', ()=>{
-      if(state.me.consentGeo === false){
-        alert('У тебя выключено согласие на геолокацию в Профиле → Настройки согласия. Включи галочку там, потом попробуй снова.');
-        return;
-      }
       if(!navigator.geolocation){ alert('Геолокация недоступна в этом браузере'); return; }
       navigator.geolocation.getCurrentPosition(async (pos)=>{
         const geo = await sGet('geo_ep'+id, {});
@@ -1881,14 +2012,8 @@ function renderProfile(){
       <div class="mono" style="color:var(--ash);font-size:12px;margin-top:6px;">№${p.number} · ${p.points} баллов</div>
     </div>
     <h2 class="section-title">Ачивки</h2>${badges}
-    <h2 class="section-title" style="margin-top:26px;">⚙️ Настройки согласия</h2>
+    <h2 class="section-title" style="margin-top:26px;">⚙️ Уведомления</h2>
     <div style="max-width:360px; margin:0 auto; font-size:14px;">
-      <label style="display:flex; align-items:center; gap:10px; margin-bottom:12px; cursor:pointer;">
-        <input type="checkbox" id="consent-geo" ${p.consentGeo ? 'checked' : ''} style="width:18px; height:18px;">
-        Разрешаю делиться моей геолокацией во время активных игр
-      </label>
-      <div style="font-size:12px; color:var(--ash); margin-bottom:16px;">Можно включить или выключить в любой момент. Если случайно нажал(а) «не разрешаю» браузеру раньше — включи здесь и попробуй поделиться локацией заново, браузер спросит снова.</div>
-
       <button class="small-btn" id="push-enable-btn" style="width:100%; padding:10px;">${p.pushToken ? '🔔 Уведомления включены' : '🔔 Разрешить уведомления'}</button>
       <div id="push-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px; text-align:center;"></div>
     </div>
@@ -1909,15 +2034,6 @@ function renderProfile(){
 
   const adminLinkBtn = document.getElementById('open-admin-from-profile-btn');
   if(adminLinkBtn) adminLinkBtn.addEventListener('click', ()=> showView('admin'));
-
-  document.getElementById('consent-geo').addEventListener('change', async (e)=>{
-    const players = await sGet('players', []);
-    const target = players.find(x=>x.id===p.id);
-    if(!target) return;
-    target.consentGeo = e.target.checked;
-    await sSet('players', players);
-    state.me = target; state.profiles = await fetchProfiles();
-  });
 
   document.getElementById('push-enable-btn').addEventListener('click', async ()=>{
     const btn = document.getElementById('push-enable-btn');
@@ -2067,11 +2183,12 @@ async function renderAdmin(){
   `;
   html += `<h2 class="section-title" style="margin-top:30px;">🎯 Метки — Охота за метками</h2>
     <div class="admin-ep-block">
-      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Кликни по карте, чтобы поставить точку — появится форма с описанием и фото. Метка сразу сохраняется и получает порядковый номер.</div>
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Кликни по карте, чтобы поставить точку — появится форма с описанием, фото и/или ссылкой на видео. Метка сразу сохраняется и получает порядковый номер.</div>
       <div id="admin-markers-map" style="height:320px; border-radius:2px; margin-bottom:12px;"></div>
       <div id="marker-form" style="display:none; border:1px solid var(--ash-dim); padding:12px; border-radius:2px; margin-bottom:12px;">
         <div class="mono" style="font-size:11px; color:var(--ash); margin-bottom:8px;">Новая метка — координаты: <span id="marker-coords"></span></div>
         <textarea class="paper-input" id="marker-desc" placeholder="Краткое описание — где именно спрятано" style="margin-bottom:8px;"></textarea>
+        <input type="text" class="paper-input" id="marker-video" placeholder="Ссылка на видео (YouTube/VK) — необязательно" style="margin-bottom:8px;">
         <label class="photo-frame" id="marker-photo-frame" for="marker-photo-input" style="width:80px; height:80px; margin-bottom:8px;">
           <span id="marker-photo-placeholder">＋</span>
           <img id="marker-photo-preview" style="display:none;">
@@ -2083,6 +2200,16 @@ async function renderAdmin(){
         </div>
       </div>
       <div id="admin-markers-list"></div>
+    </div>
+  `;
+  html += `<h2 class="section-title" style="margin-top:30px; color:#ff8a75;">⚠️ Полный сброс сезона</h2>
+    <div class="admin-ep-block" style="border-color:#ff5c5c;">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">
+        Возвращает все ${SEED_ACCOUNTS.length} логинов/паролей в исходное состояние — как будто никто ещё ни разу не заходил: без имени, без фото, без баллов. Банк обнуляется. Статусы всех Глав и Событий сбрасываются на «Закрыта».<br><br>
+        <b>Логины и пароли остаются теми же</b> — можно будет заходить теми же данными заново. Метки для Охоты и пароль администратора <b>не трогаются</b>.<br><br>
+        Используй это только перед настоящим стартом сезона, когда закончили тестировать.
+      </div>
+      <button class="small-btn danger" id="full-season-reset-btn">Сбросить весь сезон</button>
     </div>
   `;
   html += `<h2 class="section-title" style="margin-top:30px;">Готовые аккаунты</h2>
@@ -2185,6 +2312,7 @@ async function renderAdmin(){
     await pushEvent(`Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
     sendPushToAll('EPISODE', `Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
     updateHeaderBank();
+    playMoneyRain();
     document.getElementById('prize-save').textContent = 'Сохранено ✓';
     setTimeout(()=>{ document.getElementById('prize-save').textContent = 'Обновить банк'; }, 1500);
   });
@@ -2201,6 +2329,30 @@ async function renderAdmin(){
   });
   renderAdminEventsList();
   initMarkersAdmin();
+
+  document.getElementById('full-season-reset-btn').addEventListener('click', async ()=>{
+    if(!confirm('Точно сбросить весь сезон? Все имена, фото и баллы всех игроков исчезнут. Логины и пароли останутся прежними.')) return;
+    if(!confirm('Последняя проверка — это нельзя отменить. Сбросить прогресс всех 25 аккаунтов и обнулить банк?')) return;
+
+    const btn = document.getElementById('full-season-reset-btn');
+    btn.disabled = true; btn.textContent = 'Сбрасываю...';
+
+    const freshPlayers = SEED_ACCOUNTS.map((acc,i)=> ({
+      id: 'p' + (i+1), login: acc.login, password: acc.password,
+      name: acc.login, displayNameSet: false, photo: null,
+      number: String(i+1).padStart(2,'0'), points: 0, achievements: []
+    }));
+    await sSet('players', freshPlayers);
+    await sSet('episodes', {});
+    await sSet('custom_events', []);
+    await sSet('prize_pool', 0);
+    await sSet('events', []);
+
+    state.profiles = await fetchProfiles();
+    await refreshAll();
+    btn.disabled = false; btn.textContent = 'Готово ✓ — сезон сброшен';
+    setTimeout(()=> renderAdmin(), 1500);
+  });
 
   document.getElementById('split-teams-btn').addEventListener('click', async ()=>{
     const pool = state.profiles.filter(p=>p.displayNameSet);
@@ -2274,6 +2426,7 @@ async function initMarkersAdmin(){
       document.getElementById('marker-form').dataset.lat = e.latlng.lat;
       document.getElementById('marker-form').dataset.lng = e.latlng.lng;
       document.getElementById('marker-desc').value = '';
+      document.getElementById('marker-video').value = '';
       markerPhotoData = null;
       document.getElementById('marker-photo-preview').style.display = 'none';
       document.getElementById('marker-photo-placeholder').style.display = 'block';
@@ -2298,17 +2451,19 @@ async function initMarkersAdmin(){
   document.getElementById('marker-save-btn').onclick = async ()=>{
     const form = document.getElementById('marker-form');
     const desc = document.getElementById('marker-desc').value.trim();
+    const video = document.getElementById('marker-video').value.trim();
     if(!desc){ alert('Напиши короткое описание метки.'); return; }
     const markers = await sGet('markers_ep2', []);
     const num = markers.length + 1;
     markers.push({
       id: 'm'+Date.now(), number: num,
       lat: parseFloat(form.dataset.lat), lng: parseFloat(form.dataset.lng),
-      description: desc, photo: markerPhotoData
+      description: desc, photo: markerPhotoData, video: video || null
     });
     const ok = await sSet('markers_ep2', markers);
     if(!ok){ alert('Не удалось сохранить — попробуй ещё раз.'); return; }
     form.style.display = 'none';
+    document.getElementById('marker-video').value = '';
     renderMarkersMapPoints();
     renderAdminMarkersList();
   };
@@ -2323,7 +2478,9 @@ async function renderMarkersMapPoints(){
   const markers = await sGet('markers_ep2', []);
   markersAdminMarkerLayer.clearLayers();
   markers.forEach(m=>{
-    L.marker([m.lat, m.lng]).addTo(markersAdminMarkerLayer).bindPopup(`Метка №${m.number}<br>${escapeHtml(m.description)}`);
+    const photoHtml = m.photo ? `<br><img src="${m.photo}" style="width:100px; border-radius:4px; margin-top:4px;">` : '';
+    const videoHtml = m.video ? `<br><a href="${escapeHtml(m.video)}" target="_blank" rel="noopener">▶ Смотреть видео</a>` : '';
+    L.marker([m.lat, m.lng]).addTo(markersAdminMarkerLayer).bindPopup(`<b>Метка №${m.number}</b><br>${escapeHtml(m.description)}${photoHtml}${videoHtml}`);
   });
 }
 async function renderAdminMarkersList(){
@@ -2331,7 +2488,7 @@ async function renderAdminMarkersList(){
   if(!el) return;
   const markers = await sGet('markers_ep2', []);
   el.innerHTML = markers.length ? markers.map(m=> `<div class="admin-ep-row">
-      <div>${m.photo ? `<img src="${m.photo}" style="width:36px; height:36px; border-radius:4px; object-fit:cover; vertical-align:middle; margin-right:8px;">` : ''}Метка №${m.number} — ${escapeHtml(m.description)}</div>
+      <div>${m.photo ? `<img src="${m.photo}" style="width:36px; height:36px; border-radius:4px; object-fit:cover; vertical-align:middle; margin-right:8px;">` : ''}Метка №${m.number} — ${escapeHtml(m.description)}${m.video ? ' 🎬' : ''}</div>
       <button class="small-btn danger" data-del-marker="${m.id}">Удалить</button>
     </div>`).join('') : '<div class="empty-state">Меток пока нет — кликни по карте выше</div>';
   el.querySelectorAll('[data-del-marker]').forEach(btn=> btn.addEventListener('click', async ()=>{
@@ -2401,6 +2558,22 @@ function timeAgo(ts){
 }
 
 /* ============ INIT — узнаём вернувшегося игрока по id, сохранённому в localStorage этого устройства ============ */
+/* Если в адресе есть ?open=episode-2 или ?open=event-абв — сразу открывает эту главу/событие после входа */
+function handleDeepLinkOnEnter(){
+  const params = new URLSearchParams(location.search);
+  const open = params.get('open');
+  if(!open) return;
+  const [kind, ...rest] = open.split('-');
+  const targetId = rest.join('-');
+  if(kind === 'episode'){
+    showView('episodes');
+    setTimeout(()=> openEpisode(parseInt(targetId,10)), 200);
+  } else if(kind === 'event'){
+    showView('events');
+    setTimeout(()=> openCustomEvent(targetId), 200);
+  }
+}
+
 (async function init(){
   if(sbClient){
     const savedId = await pGet('my_player_id', null);
@@ -2414,6 +2587,7 @@ function timeAgo(ts){
         stopWelcomeEffects();
         await refreshAll();
         startBackgroundPollers();
+        handleDeepLinkOnEnter();
         return;
       }
     }
