@@ -224,6 +224,68 @@ nav button:hover{ color:var(--ember-bright); border-bottom-color:var(--ember-bri
 nav button.active{ color:var(--ember-bright); border-bottom-color:var(--ember); text-shadow:0 0 10px rgba(245,180,100,.3);}
 main{ max-width:920px; margin:0 auto; padding:30px 20px 80px;}
 
+.header-bank-badge{
+  font-family:'JetBrains Mono',monospace; font-size:13px; font-weight:600; color:var(--ember-bright);
+  background:rgba(201,124,44,.14); border:1px solid var(--ember); border-radius:20px;
+  padding:7px 13px; white-space:nowrap; flex-shrink:0;
+}
+.header-avatar{
+  width:40px; height:40px; border-radius:50%; object-fit:cover; border:2px solid var(--ember);
+  display:flex; align-items:center; justify-content:center; font-family:'Cinzel',serif; font-size:17px; font-weight:700;
+  color:var(--ember-bright); background:rgba(201,124,44,.15); flex-shrink:0; cursor:pointer; overflow:hidden;
+}
+.drawer-bank-row{
+  padding:12px 20px; font-family:'JetBrains Mono',monospace; font-size:13px; color:var(--parchment);
+  border-bottom:1px solid var(--ash-dim); background:rgba(201,124,44,.05);
+}
+.drawer-bank-row b{ color:var(--ember-bright); }
+
+/* ---------- mobile burger + slide-out drawer (desktop untouched) ---------- */
+#burger-btn{ display:none; background:transparent; border:1px solid var(--ash-dim); border-radius:6px; width:40px; height:40px; align-items:center; justify-content:center; color:var(--ember-bright); font-size:18px; cursor:pointer; flex-shrink:0; }
+#drawer-overlay{ display:none; position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.55); opacity:0; transition:opacity .3s ease; backdrop-filter:blur(2px); }
+#drawer-overlay.open{ opacity:1; }
+#drawer{
+  position:fixed; top:0; bottom:0; left:0; z-index:61; width:82%; max-width:340px;
+  background:linear-gradient(160deg, #14100b, #0a0806 70%); border-right:1px solid var(--ash-dim);
+  transform:translateX(-100%); transition:transform .32s cubic-bezier(.2,.8,.25,1);
+  display:flex; flex-direction:column; box-shadow:14px 0 40px rgba(0,0,0,.5);
+}
+#drawer.open{ transform:translateX(0); }
+.drawer-head{ padding:20px 20px 12px; display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid var(--ash-dim); }
+.drawer-close{ background:transparent; border:none; color:var(--ash); font-size:22px; cursor:pointer; padding:6px; line-height:1; }
+.drawer-nav{ flex:1; overflow-y:auto; padding:14px 12px; }
+.drawer-nav button{
+  width:100%; text-align:left; background:transparent; border:none; color:var(--parchment);
+  font-family:'Cinzel',serif; font-size:15px; letter-spacing:.04em; padding:16px 14px; border-radius:8px;
+  display:flex; align-items:center; gap:14px; cursor:pointer; transition: background .2s, color .2s; margin-bottom:2px;
+}
+.drawer-nav button .ic{ font-size:19px; width:24px; text-align:center; }
+.drawer-nav button:active{ background:rgba(201,124,44,.15); }
+.drawer-nav button.active{ background:rgba(201,124,44,.12); color:var(--ember-bright); }
+.drawer-divider{ height:1px; background:var(--ash-dim); margin:10px 6px; opacity:.5; }
+.drawer-user{
+  display:flex; align-items:center; gap:12px; padding:16px 18px; border-top:1px solid var(--ash-dim);
+  cursor:pointer; transition:background .2s;
+}
+.drawer-user:active{ background:rgba(201,124,44,.1); }
+.drawer-user-avatar{
+  width:44px; height:44px; border-radius:50%; object-fit:cover; border:2px solid var(--ember);
+  display:flex; align-items:center; justify-content:center; font-family:'Cinzel',serif; font-size:18px;
+  color:var(--ember-bright); background:rgba(201,124,44,.15); flex-shrink:0;
+}
+.drawer-user-name{ font-family:'Cinzel',serif; font-size:14px; color:var(--parchment); }
+.drawer-user-sub{ font-size:11px; color:var(--ash); font-family:'JetBrains Mono',monospace; }
+
+@media (max-width: 760px){
+  header{ padding:10px 12px; gap:8px; }
+  #burger-btn{ display:flex; }
+  nav#main-nav{ display:none !important; }
+  .logo{ font-size:15px; }
+  #logout-btn{ display:none; }
+  .header-bank-badge{ font-size:12px; padding:6px 10px; }
+  main{ padding:18px 14px 90px; }
+}
+
 .view{ display:none; animation: viewIn .5s ease; }
 .view.active{ display:block;}
 @keyframes viewIn{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
@@ -348,6 +410,19 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 #admin-content.admin-light .admin-ep-block, #admin-content.admin-light .admin-ep-row{ border-color:#c9a876; background:rgba(0,0,0,0.03); color:#241708;}
 #admin-content.admin-light .small-btn{ color:#5a3a1c; border-color:#c9a876;}
 #admin-content.admin-light .small-btn:hover{ background:#c9a876; color:#241708;}
+/* catch every inline-styled heading/label that assumes a dark background (var(--ember-bright), var(--ash), var(--parchment))
+   and force readable dark text instead, since on the light theme those would be near-invisible */
+#admin-content.admin-light [style*="ember-bright"],
+#admin-content.admin-light h2, #admin-content.admin-light h3, #admin-content.admin-light b, #admin-content.admin-light strong{
+  color:#8a4a12 !important;
+}
+#admin-content.admin-light [style*="var(--ash)"],
+#admin-content.admin-light .mono, #admin-content.admin-light .empty-state{
+  color:#6b5b3f !important;
+}
+#admin-content.admin-light div, #admin-content.admin-light span, #admin-content.admin-light label{ color:#241708; }
+#admin-content.admin-light .status-badge{ color:#241708; border-color:#8a4a12;}
+#admin-content.admin-light a{ color:#8a4a12; }
 #admin-content.admin-light .empty-state{ color:#8a7a5c;}
 #admin-content.admin-light .status-badge.status-locked{ color:#8a7a5c; border-color:#c9a876;}
 .admin-pts-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:20px;}
@@ -487,6 +562,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     <input type="password" id="pass-input" class="paper-input" placeholder="Пароль" maxlength="32" autocomplete="off" style="margin-top:10px;">
     <div id="reg-error" class="reg-error"></div>
     <button class="enter-btn" id="login-btn">Войти в игру</button>
+    <button class="small-btn" id="preview-btn" style="width:100%; margin-top:12px; padding:12px;">👁 Предварительный просмотр (без входа)</button>
   </div>
 </div>
 
@@ -512,18 +588,45 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 <!-- MAIN APP -->
 <div id="app">
   <header>
+    <button id="burger-btn" aria-label="Меню">☰</button>
     <div class="logo">EPISODE</div>
     <nav id="main-nav" style="flex:1; justify-content:center;">
       <button data-view="home" class="active">Главная</button>
       <button data-view="players">Игроки</button>
       <button data-view="episodes">Главы</button>
       <button data-view="events">События</button>
-      <button data-view="prize">Выигрыш</button>
       <button data-view="profile">Профиль</button>
-      <button data-view="admin">Админка</button>
     </nav>
+    <div id="header-bank-badge" class="header-bank-badge" title="Общий банк сезона">💰 —</div>
+    <div id="header-avatar" class="header-avatar" title="Профиль">?</div>
     <button id="logout-btn" class="small-btn" title="Выйти из аккаунта">Выйти</button>
   </header>
+
+  <div id="drawer-overlay"></div>
+  <div id="drawer">
+    <div class="drawer-head">
+      <div class="logo" style="font-size:17px;">EPISODE</div>
+      <button class="drawer-close" id="drawer-close-btn">✕</button>
+    </div>
+    <div class="drawer-bank-row" id="drawer-bank-row">💰 Банк сезона: <b id="drawer-bank-amount">—</b></div>
+    <div class="drawer-nav">
+      <button data-view="home"><span class="ic">🏠</span> Главная</button>
+      <button data-view="players"><span class="ic">👥</span> Игроки</button>
+      <button data-view="episodes"><span class="ic">📖</span> Главы</button>
+      <button data-view="events"><span class="ic">🎲</span> События</button>
+      <div class="drawer-divider"></div>
+      <button data-view="profile"><span class="ic">👤</span> Профиль</button>
+      <button id="drawer-logout-btn"><span class="ic">🚪</span> Выйти из аккаунта</button>
+    </div>
+    <div class="drawer-user" id="drawer-user-card">
+      <div class="drawer-user-avatar" id="drawer-user-avatar">?</div>
+      <div>
+        <div class="drawer-user-name" id="drawer-user-name">—</div>
+        <div class="drawer-user-sub">Открыть профиль</div>
+      </div>
+    </div>
+  </div>
+
   <div id="global-tagger-banner"></div>
 
   <main>
@@ -992,6 +1095,27 @@ document.getElementById('login-btn').addEventListener('click', async ()=>{
   }
 });
 
+/* ===== ВРЕМЕННО: предварительный просмотр без входа — для тестирования с телефона.
+   Показывает настоящие живые данные сайта (список игроков и т.д.), но не пишет ничего от чужого имени —
+   действия вроде чата/геолокации будут отправляться как "Гость (просмотр)". Удалить кнопку, когда не нужна. ===== */
+document.getElementById('preview-btn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('preview-btn');
+  const errorEl = document.getElementById('reg-error');
+  errorEl.textContent = '';
+  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return; }
+  btn.disabled = true;
+  const originalText = btn.textContent;
+  btn.textContent = 'Загружаю...';
+  try{
+    state.me = { id: 'preview-guest', name: 'Гость (просмотр)', photo: null, points: 0, achievements: [], displayNameSet: true, login: null };
+    await enterApp();
+  } catch(e){
+    errorEl.textContent = 'Не получилось открыть предпросмотр: ' + errorToString(e);
+    console.error('preview-btn error:', e);
+    btn.disabled = false; btn.textContent = originalText;
+  }
+});
+
 document.getElementById('first-time-continue-btn').addEventListener('click', async ()=>{
   const card = document.getElementById('first-time-card');
   const errorEl = document.getElementById('first-time-error');
@@ -1033,15 +1157,24 @@ function enterApp(){
   const ring = document.getElementById('shock-ring');
   bt.classList.add('play');
   ring.classList.add('play');
-  setTimeout(async ()=>{
-    document.getElementById('welcome').style.display = 'none';
-    document.getElementById('first-time-card').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    stopWelcomeEffects();
-    await refreshAll();
-    startBackgroundPollers();
-  }, 750);
-  setTimeout(()=>{ bt.classList.remove('play'); ring.classList.remove('play'); }, 1800);
+  return new Promise((resolve, reject)=>{
+    setTimeout(async ()=>{
+      try{
+        document.getElementById('welcome').style.display = 'none';
+        document.getElementById('first-time-card').style.display = 'none';
+        document.getElementById('app').style.display = 'block';
+        stopWelcomeEffects();
+        await refreshAll();
+        startBackgroundPollers();
+        resolve();
+      } catch(e){
+        document.getElementById('welcome').style.display = 'flex';
+        document.getElementById('app').style.display = 'none';
+        reject(e);
+      }
+    }, 750);
+    setTimeout(()=>{ bt.classList.remove('play'); ring.classList.remove('play'); }, 1800);
+  });
 }
 
 /* ============ EVENTS FEED ============ */
@@ -1157,8 +1290,15 @@ document.getElementById('main-nav').addEventListener('click', (e)=>{
   if(!btn) return;
   showView(btn.dataset.view);
 });
+document.querySelector('.drawer-nav').addEventListener('click', (e)=>{
+  const btn = e.target.closest('button[data-view]');
+  if(!btn) return;
+  showView(btn.dataset.view);
+  closeDrawer();
+});
 function showView(name){
   document.querySelectorAll('#main-nav button').forEach(b=> b.classList.toggle('active', b.dataset.view===name));
+  document.querySelectorAll('.drawer-nav button[data-view]').forEach(b=> b.classList.toggle('active', b.dataset.view===name));
   document.querySelectorAll('.view').forEach(v=> v.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   if(state.chatPoll && name !== 'episode-detail' && name !== 'event-detail'){ clearInterval(state.chatPoll); state.chatPoll = null; }
@@ -1170,6 +1310,78 @@ function showView(name){
   if(name==='profile') renderProfile();
   if(name==='admin') renderAdmin();
 }
+
+/* ============ MOBILE DRAWER MENU ============ */
+const drawerEl = document.getElementById('drawer');
+const drawerOverlayEl = document.getElementById('drawer-overlay');
+function openDrawer(){
+  drawerEl.classList.add('open');
+  drawerOverlayEl.style.display = 'block';
+  requestAnimationFrame(()=> drawerOverlayEl.classList.add('open'));
+  document.body.style.overflow = 'hidden';
+  updateDrawerUserCard();
+}
+function closeDrawer(){
+  drawerEl.classList.remove('open');
+  drawerOverlayEl.classList.remove('open');
+  document.body.style.overflow = '';
+  setTimeout(()=>{ if(!drawerEl.classList.contains('open')) drawerOverlayEl.style.display = 'none'; }, 320);
+}
+document.getElementById('burger-btn').addEventListener('click', openDrawer);
+document.getElementById('drawer-close-btn').addEventListener('click', closeDrawer);
+drawerOverlayEl.addEventListener('click', closeDrawer);
+document.getElementById('drawer-logout-btn').addEventListener('click', async ()=>{
+  if(!confirm('Выйти из аккаунта на этом устройстве?')) return;
+  await pSet('my_player_id', null);
+  location.reload();
+});
+document.getElementById('drawer-user-card').addEventListener('click', ()=>{ showView('profile'); closeDrawer(); });
+
+function updateDrawerUserCard(){
+  if(!state.me) return;
+  const av = document.getElementById('drawer-user-avatar');
+  const nameEl = document.getElementById('drawer-user-name');
+  nameEl.textContent = state.me.name || '—';
+  if(state.me.photo){ av.innerHTML = `<img src="${state.me.photo}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`; }
+  else { av.textContent = (state.me.name||'?')[0].toUpperCase(); }
+
+  const headerAv = document.getElementById('header-avatar');
+  if(headerAv){
+    if(state.me.photo){ headerAv.innerHTML = `<img src="${state.me.photo}" style="width:100%; height:100%; object-fit:cover;">`; }
+    else { headerAv.textContent = (state.me.name||'?')[0].toUpperCase(); }
+  }
+}
+document.getElementById('header-avatar').addEventListener('click', ()=> showView('profile'));
+
+async function updateHeaderBank(){
+  const amount = await sGet('prize_pool', 0);
+  const text = `💰 ${Number(amount).toLocaleString('ru-RU')} ₽`;
+  const badge = document.getElementById('header-bank-badge');
+  const drawerAmount = document.getElementById('drawer-bank-amount');
+  if(badge) badge.textContent = text;
+  if(drawerAmount) drawerAmount.textContent = `${Number(amount).toLocaleString('ru-RU')} ₽`;
+}
+
+/* swipe-to-close: track horizontal drag on the drawer itself (drawer is on the LEFT now, so it closes when dragged left) */
+(function(){
+  let startX = null, currentX = null, dragging = false;
+  drawerEl.addEventListener('touchstart', (e)=>{ startX = e.touches[0].clientX; dragging = true; drawerEl.style.transition = 'none'; }, {passive:true});
+  drawerEl.addEventListener('touchmove', (e)=>{
+    if(!dragging) return;
+    currentX = e.touches[0].clientX;
+    const delta = Math.min(0, currentX - startX);
+    drawerEl.style.transform = `translateX(${delta}px)`;
+  }, {passive:true});
+  drawerEl.addEventListener('touchend', ()=>{
+    if(!dragging) return;
+    dragging = false;
+    drawerEl.style.transition = '';
+    drawerEl.style.transform = '';
+    const delta = (currentX||0) - (startX||0);
+    if(delta < -70) closeDrawer();
+    startX = null; currentX = null;
+  });
+})();
 
 document.getElementById('logout-btn').addEventListener('click', async ()=>{
   if(!confirm('Выйти из аккаунта на этом устройстве?')) return;
@@ -1186,6 +1398,8 @@ async function refreshAll(){
   renderHeader();
   renderHome();
   renderGlobalTaggerBanner();
+  updateDrawerUserCard();
+  updateHeaderBank();
 }
 
 function renderGlobalTaggerBanner(){
@@ -1686,7 +1900,15 @@ function renderProfile(){
       <button class="small-btn" id="pw-change-btn" style="width:100%; padding:10px;">Сменить пароль</button>
       <div id="pw-change-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px; text-align:center;"></div>
     </div>
+    ${(p.login === 'Даня' || p.isAdmin) ? `
+    <h2 class="section-title" style="margin-top:26px;">🛠 Организатору</h2>
+    <div style="max-width:320px; margin:0 auto;">
+      <button class="enter-btn" id="open-admin-from-profile-btn" style="width:100%;">🛠 Админ-панель</button>
+    </div>` : ''}
   `;
+
+  const adminLinkBtn = document.getElementById('open-admin-from-profile-btn');
+  if(adminLinkBtn) adminLinkBtn.addEventListener('click', ()=> showView('admin'));
 
   document.getElementById('consent-geo').addEventListener('change', async (e)=>{
     const players = await sGet('players', []);
@@ -1843,6 +2065,26 @@ async function renderAdmin(){
     </div>
     <div id="admin-events-list"></div>
   `;
+  html += `<h2 class="section-title" style="margin-top:30px;">🎯 Метки — Охота за метками</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Кликни по карте, чтобы поставить точку — появится форма с описанием и фото. Метка сразу сохраняется и получает порядковый номер.</div>
+      <div id="admin-markers-map" style="height:320px; border-radius:2px; margin-bottom:12px;"></div>
+      <div id="marker-form" style="display:none; border:1px solid var(--ash-dim); padding:12px; border-radius:2px; margin-bottom:12px;">
+        <div class="mono" style="font-size:11px; color:var(--ash); margin-bottom:8px;">Новая метка — координаты: <span id="marker-coords"></span></div>
+        <textarea class="paper-input" id="marker-desc" placeholder="Краткое описание — где именно спрятано" style="margin-bottom:8px;"></textarea>
+        <label class="photo-frame" id="marker-photo-frame" for="marker-photo-input" style="width:80px; height:80px; margin-bottom:8px;">
+          <span id="marker-photo-placeholder">＋</span>
+          <img id="marker-photo-preview" style="display:none;">
+        </label>
+        <input type="file" id="marker-photo-input" accept="image/*" style="display:none">
+        <div>
+          <button class="small-btn" id="marker-save-btn">Сохранить метку</button>
+          <button class="small-btn" id="marker-cancel-btn">Отмена</button>
+        </div>
+      </div>
+      <div id="admin-markers-list"></div>
+    </div>
+  `;
   html += `<h2 class="section-title" style="margin-top:30px;">Готовые аккаунты</h2>
     <div class="admin-ep-block">
       <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Эти ${SEED_ACCOUNTS.length} пар логин/пароль уже созданы автоматически при первом запуске сайта — раздай их друзьям. При первом входе каждый сам придумает своё отображаемое имя и фото — их видят все, а логин остаётся служебным.</div>
@@ -1942,6 +2184,7 @@ async function renderAdmin(){
     await sSet('prize_pool', val);
     await pushEvent(`Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
     sendPushToAll('EPISODE', `Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
+    updateHeaderBank();
     document.getElementById('prize-save').textContent = 'Сохранено ✓';
     setTimeout(()=>{ document.getElementById('prize-save').textContent = 'Обновить банк'; }, 1500);
   });
@@ -1957,6 +2200,7 @@ async function renderAdmin(){
     renderAdmin();
   });
   renderAdminEventsList();
+  initMarkersAdmin();
 
   document.getElementById('split-teams-btn').addEventListener('click', async ()=>{
     const pool = state.profiles.filter(p=>p.displayNameSet);
@@ -2012,6 +2256,90 @@ async function renderAdminEventsList(){
     const events = (await sGet('custom_events', [])).filter(x=>x.id!==btn.dataset.delEv);
     await sSet('custom_events', events);
     renderAdminEventsList();
+  }));
+}
+let markersAdminMap = null;
+let markersAdminMarkerLayer = null;
+let markerPhotoData = null;
+async function initMarkersAdmin(){
+  const holder = document.getElementById('admin-markers-map');
+  if(!holder || typeof L === 'undefined') return;
+
+  if(!markersAdminMap){
+    markersAdminMap = L.map(holder).setView([51.6720, 39.1843], 12); // Воронеж
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(markersAdminMap);
+    markersAdminMap.on('click', (e)=>{
+      document.getElementById('marker-form').style.display = 'block';
+      document.getElementById('marker-coords').textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+      document.getElementById('marker-form').dataset.lat = e.latlng.lat;
+      document.getElementById('marker-form').dataset.lng = e.latlng.lng;
+      document.getElementById('marker-desc').value = '';
+      markerPhotoData = null;
+      document.getElementById('marker-photo-preview').style.display = 'none';
+      document.getElementById('marker-photo-placeholder').style.display = 'block';
+    });
+  }
+  setTimeout(()=> markersAdminMap.invalidateSize(), 150);
+
+  document.getElementById('marker-photo-input').onchange = (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async ()=>{
+      markerPhotoData = await compressImage(reader.result, 260, 0.8);
+      document.getElementById('marker-photo-preview').src = markerPhotoData;
+      document.getElementById('marker-photo-preview').style.display = 'block';
+      document.getElementById('marker-photo-placeholder').style.display = 'none';
+    };
+    reader.readAsDataURL(file);
+  };
+
+  document.getElementById('marker-cancel-btn').onclick = ()=>{ document.getElementById('marker-form').style.display = 'none'; };
+
+  document.getElementById('marker-save-btn').onclick = async ()=>{
+    const form = document.getElementById('marker-form');
+    const desc = document.getElementById('marker-desc').value.trim();
+    if(!desc){ alert('Напиши короткое описание метки.'); return; }
+    const markers = await sGet('markers_ep2', []);
+    const num = markers.length + 1;
+    markers.push({
+      id: 'm'+Date.now(), number: num,
+      lat: parseFloat(form.dataset.lat), lng: parseFloat(form.dataset.lng),
+      description: desc, photo: markerPhotoData
+    });
+    const ok = await sSet('markers_ep2', markers);
+    if(!ok){ alert('Не удалось сохранить — попробуй ещё раз.'); return; }
+    form.style.display = 'none';
+    renderMarkersMapPoints();
+    renderAdminMarkersList();
+  };
+
+  const markers = await sGet('markers_ep2', []);
+  markersAdminMarkerLayer = L.layerGroup().addTo(markersAdminMap);
+  renderMarkersMapPoints();
+  renderAdminMarkersList();
+}
+async function renderMarkersMapPoints(){
+  if(!markersAdminMap) return;
+  const markers = await sGet('markers_ep2', []);
+  markersAdminMarkerLayer.clearLayers();
+  markers.forEach(m=>{
+    L.marker([m.lat, m.lng]).addTo(markersAdminMarkerLayer).bindPopup(`Метка №${m.number}<br>${escapeHtml(m.description)}`);
+  });
+}
+async function renderAdminMarkersList(){
+  const el = document.getElementById('admin-markers-list');
+  if(!el) return;
+  const markers = await sGet('markers_ep2', []);
+  el.innerHTML = markers.length ? markers.map(m=> `<div class="admin-ep-row">
+      <div>${m.photo ? `<img src="${m.photo}" style="width:36px; height:36px; border-radius:4px; object-fit:cover; vertical-align:middle; margin-right:8px;">` : ''}Метка №${m.number} — ${escapeHtml(m.description)}</div>
+      <button class="small-btn danger" data-del-marker="${m.id}">Удалить</button>
+    </div>`).join('') : '<div class="empty-state">Меток пока нет — кликни по карте выше</div>';
+  el.querySelectorAll('[data-del-marker]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(!confirm('Удалить метку?')) return;
+    const markers = (await sGet('markers_ep2', [])).filter(m=>m.id!==btn.dataset.delMarker);
+    await sSet('markers_ep2', markers);
+    renderMarkersMapPoints();
+    renderAdminMarkersList();
   }));
 }
 function renderTeamsResult(teams){
