@@ -471,7 +471,14 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 }
 .event-card:hover{ border-color:var(--ember);}
 .event-card.closed{ opacity:.55; cursor:not-allowed;}
+.event-card.event-live{ border-color:var(--ember-bright); background:rgba(201,124,44,.08); animation: cardIn .5s ease forwards, pulseGlow 2.4s ease-in-out infinite; }
 .event-card .evname{ font-family:'Cinzel',serif; font-size:16px;}
+.start-game-btn-highlight{
+  font-size:16px !important; padding:14px 26px !important; font-weight:700;
+  background:var(--ember) !important; color:#1c1208 !important; border-color:var(--ember-bright) !important;
+  box-shadow:0 0 18px rgba(245,180,100,.5);
+  animation: pulseGlow 1.8s ease-in-out infinite;
+}
 .event-card .evdesc{ font-size:13px; color:var(--ash); margin-top:4px; max-width:400px;}
 .leader-banner{
   border:1px solid var(--ember-bright); padding:16px; margin-bottom:18px; border-radius:2px;
@@ -487,6 +494,23 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 }
 #money-rain-layer{ position:fixed; inset:0; z-index:75; pointer-events:none; overflow:hidden; display:none; }
 #points-burst-layer{ position:fixed; inset:0; z-index:74; pointer-events:none; overflow:hidden; }
+#countdown-reveal-layer{
+  display:none; position:fixed; inset:0; z-index:90; background:rgba(4,3,2,.94);
+  flex-direction:column; align-items:center; justify-content:center; text-align:center;
+}
+#countdown-reveal-layer .cr-number{
+  font-family:'Cinzel',serif; font-weight:900; font-size:min(40vw,220px); color:var(--ember-bright);
+  text-shadow:0 0 60px rgba(245,180,100,.7); animation: crNumberPop .8s cubic-bezier(.2,.9,.3,1.3);
+}
+@keyframes crNumberPop{ 0%{ transform:scale(.3); opacity:0;} 40%{ transform:scale(1.15); opacity:1;} 100%{ transform:scale(1); opacity:1;} }
+#countdown-reveal-layer .cr-reveal-name{
+  font-family:'Cinzel',serif; font-weight:800; font-size:min(11vw,52px); color:var(--parchment);
+  animation: crNumberPop .9s cubic-bezier(.2,.9,.3,1.3);
+}
+#countdown-reveal-layer .cr-reveal-sub{
+  font-family:'JetBrains Mono',monospace; font-size:13px; letter-spacing:.2em; color:var(--ember-bright);
+  text-transform:uppercase; margin-bottom:18px; opacity:0; animation: fadeUp .6s ease forwards;
+}
 .burst-particle{
   position:absolute; top:50%; font-size:22px; opacity:0;
   animation-name: burstFly; animation-timing-function: cubic-bezier(.15,.7,.3,1); animation-fill-mode:forwards;
@@ -591,6 +615,7 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 <div id="shock-ring"></div>
 <div id="toast-layer"></div>
 <div id="money-rain-layer"></div>
+<div id="countdown-reveal-layer"></div>
 <div id="points-burst-layer"></div>
 <div id="global-countdown-banner"></div>
 <div id="save-warning-banner"></div>
@@ -880,8 +905,17 @@ let state = { profiles:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:fa
 
 function getEpisodeMeta(id){
   const base = EPISODES.find(e=> e.id === Number(id));
-  const over = state.episodeOverrides[id] || {};
-  return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules, actions: base.actions || null, showTagger: !!base.showTagger };
+  if(base){
+    const over = state.episodeOverrides[id] || {};
+    return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules, actions: base.actions || null, showTagger: !!base.showTagger, photo: over.photo || null, custom:false };
+  }
+  const custom = (state.customEpisodes||[]).find(e=> e.id === id);
+  if(custom) return { id: custom.id, icon: '📌', name: custom.name, rules: custom.rules, actions: null, showTagger: false, photo: custom.photo || null, custom:true };
+  return null;
+}
+/* Полный список ID эпизодов для отрисовки — 5 фиксированных + все добавленные организатором */
+function allEpisodeIds(){
+  return [...EPISODES.map(e=>e.id), ...((state.customEpisodes||[]).map(e=>e.id))];
 }
 
 /* ============ SUPABASE CLIENT ============
@@ -1593,6 +1627,7 @@ async function refreshAll(){
   state.profiles = await fetchProfiles();
   state.episodes = await sGet('episodes', {});
   state.episodeOverrides = await sGet('episode_overrides', {});
+  state.customEpisodes = await sGet('custom_episodes', []);
   state.adminLight = await pGet('admin_theme_light', false);
   renderHeader();
   renderHome();
@@ -1647,11 +1682,31 @@ function deepLink(kind, id){
   return `${base}?open=${kind}-${id}`;
 }
 
+/* Полноэкранный драматичный отсчёт (5-4-3-2-1) с раскрытием, кто стал водящим */
+function playCountdownReveal(seconds, revealName){
+  return new Promise(resolve=>{
+    const layer = document.getElementById('countdown-reveal-layer');
+    layer.style.display = 'flex';
+    let n = seconds;
+    function tick(){
+      layer.innerHTML = `<div class="cr-number">${n}</div>`;
+      if(n <= 0){
+        layer.innerHTML = `<div class="cr-reveal-sub">Водящим становится</div><div class="cr-reveal-name">${escapeHtml(revealName)}</div>`;
+        setTimeout(()=>{ layer.style.display = 'none'; resolve(); }, 2200);
+        return;
+      }
+      n--;
+      setTimeout(tick, 850);
+    }
+    tick();
+  });
+}
+
 /* Запуск игры — общая логика, вызывается и из Админки напрямую, и из кнопки внутри самой главы.
    Помимо рандомайзера водящего и таймера, ставит метку startedAt/lastHourlyAward для автоматического
    почасового начисления баллов (см. checkHourlyAwards). */
 async function startEpisodeGame(id){
-  const base = EPISODES.find(e=>e.id===id);
+  const base = getEpisodeMeta(id);
   const pool = state.profiles.filter(p=>p.displayNameSet);
   if(base.showTagger && pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
 
@@ -1660,17 +1715,19 @@ async function startEpisodeGame(id){
   const ss = parseInt(prompt('Секунды? (0, если не нужно)', '0'), 10) || 0;
   const totalMs = (hh*3600 + mm*60 + ss) * 1000;
 
+  let chosen = null;
+  if(base.showTagger){
+    chosen = pool[Math.floor(Math.random()*pool.length)];
+    await playCountdownReveal(5, chosen.name); // драматичный отсчёт на весь экран перед стартом
+  }
+
   const eps = await sGet('episodes', {});
   eps[id] = eps[id] || {};
   eps[id].started = true;
   eps[id].endsAt = totalMs > 0 ? (Date.now() + totalMs) : null;
   eps[id].startedAt = Date.now();
   eps[id].lastHourlyAward = Date.now();
-  let chosen = null;
-  if(base.showTagger){
-    chosen = pool[Math.floor(Math.random()*pool.length)];
-    eps[id].tagger = chosen.id;
-  }
+  if(chosen) eps[id].tagger = chosen.id;
   await sSet('episodes', eps);
   await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
   state.episodes = eps;
@@ -1721,8 +1778,8 @@ function renderHeader(){
 
 /* ============ HOME ============ */
 function activeEpisode(){
-  const base = EPISODES.find(e => (state.episodes[e.id]?.status) === 'active');
-  return base ? getEpisodeMeta(base.id) : null;
+  const activeId = allEpisodeIds().find(eid => (state.episodes[eid]?.status) === 'active');
+  return activeId !== undefined ? getEpisodeMeta(activeId) : null;
 }
 document.getElementById('manual-refresh-btn').addEventListener('click', async ()=>{
   const btn = document.getElementById('manual-refresh-btn');
@@ -1785,16 +1842,20 @@ document.getElementById('modal-bg').addEventListener('click', (e)=>{ if(e.target
 /* ============ EPISODES ============ */
 function renderEpisodes(){
   const list = document.getElementById('episodes-list');
-  list.innerHTML = EPISODES.map((base,i)=>{
-    const ep = getEpisodeMeta(base.id);
+  list.innerHTML = allEpisodeIds().map((epId,i)=>{
+    const ep = getEpisodeMeta(epId);
+    if(!ep) return '';
     const st = state.episodes[ep.id]?.status || 'locked';
     const label = {locked:'Закрыт', rules:'Правила открыты', active:'Идёт сейчас', done:'Завершена'}[st];
-    return `<div class="ep-card" style="animation-delay:${i*0.04}s" data-id="${ep.id}"><div style="display:flex; align-items:center; gap:14px;"><span class="ep-icon">${ep.icon}</span><div class="epname">${CHAPTER_WORD} ${ep.id}: ${escapeHtml(ep.name)}</div></div><div class="status-badge status-${st}">${label}</div></div>`;
+    const iconHtml = ep.photo ? `<img src="${ep.photo}" style="width:34px; height:34px; border-radius:4px; object-fit:cover;">` : `<span class="ep-icon">${ep.icon}</span>`;
+    return `<div class="ep-card" style="animation-delay:${i*0.04}s" data-id="${ep.id}"><div style="display:flex; align-items:center; gap:14px;">${iconHtml}<div class="epname">${ep.custom ? escapeHtml(ep.name) : `${CHAPTER_WORD} ${ep.id}: ${escapeHtml(ep.name)}`}</div></div><div class="status-badge status-${st}">${label}</div></div>`;
   }).join('');
   list.querySelectorAll('.ep-card').forEach(c=> c.addEventListener('click', ()=>{
     const st = state.episodes[c.dataset.id]?.status || 'locked';
     if(st === 'locked' && !state.isAdmin){ return; }
-    openEpisode(parseInt(c.dataset.id,10));
+    const rawId = c.dataset.id;
+    const numId = parseInt(rawId,10);
+    openEpisode(String(numId) === rawId ? numId : rawId);
   }));
 }
 
@@ -1833,7 +1894,7 @@ async function openEpisode(id){
         const hint = ep.showTagger
           ? 'Выберет случайного водящего среди тех, кто уже зашёл на сайт, и включит таймер.'
           : 'Откроет действия этого эпизода всем и включит таймер (если задан).';
-        taggerBlock = `<div style="margin:14px 0;"><button class="action-btn" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">${hint}</div></div>`;
+        taggerBlock = `<div style="margin:14px 0;"><button class="action-btn start-game-btn-highlight" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">${hint}</div></div>`;
       } else {
         taggerBlock = `<div class="empty-state" style="margin:14px 0;">Эпизод открыт, но ещё не запущен организатором — подожди начала.</div>`;
       }
@@ -2002,9 +2063,10 @@ async function renderEventsList(){
   const visible = state.isAdmin ? events : events.filter(e=> e.status==='open');
   list.innerHTML = visible.length ? visible.map((e,i)=>{
     const closed = e.status !== 'open';
-    return `<div class="event-card ${closed?'closed':''}" style="animation-delay:${i*0.05}s" data-id="${e.id}">
+    const isLive = !closed && e.leader; // событие реально в разгаре — уже есть ведущий
+    return `<div class="event-card ${closed?'closed':''} ${isLive?'event-live':''}" style="animation-delay:${i*0.05}s" data-id="${e.id}">
       <div><div class="evname">${escapeHtml(e.title)}</div><div class="evdesc">${escapeHtml(e.description||'')}</div></div>
-      <div class="status-badge status-${closed?'locked':'active'}">${closed?'Закрыто':'Открыто'}</div>
+      <div class="status-badge ${isLive?'status-active':(closed?'status-locked':'status-active')}">${closed?'Закрыто':(isLive?'● Идёт сейчас':'Открыто')}</div>
     </div>`;
   }).join('') : '<div class="empty-state">Пока нет открытых событий</div>';
   list.querySelectorAll('.event-card').forEach(c=>{
@@ -2293,28 +2355,40 @@ async function renderAdmin(){
     <button class="small-btn" id="admin-theme-toggle">${state.adminLight ? '🌙 Тёмная тема' : '☀ Светлая тема'}</button>
   </div>`;
   html += `<h2 class="section-title">Управление эпизодами</h2>`;
-  EPISODES.forEach(base=>{
-    const meta = getEpisodeMeta(base.id);
-    const st = state.episodes[base.id]?.status || 'locked';
+  allEpisodeIds().forEach(epId=>{
+    const meta = getEpisodeMeta(epId);
+    const st = state.episodes[epId]?.status || 'locked';
+    const photoHtml = meta.photo ? `<img src="${meta.photo}" style="width:100%; max-width:220px; border-radius:4px; margin-bottom:8px; display:block;">` : '';
     html += `<div class="admin-ep-block">
       <div class="row1">
-        <div><span class="ep-icon" style="font-size:18px;">${meta.icon}</span> ${CHAPTER_WORD} ${base.id}${state.episodes[base.id]?.started ? ' <span style="color:var(--green-ok); font-size:11px;">● запущена</span>' : ''}</div>
+        <div>${meta.photo ? '' : `<span class="ep-icon" style="font-size:18px;">${meta.icon}</span>`} ${meta.custom ? escapeHtml(meta.name) : (CHAPTER_WORD+' '+epId)}${state.episodes[epId]?.started ? ' <span style="color:var(--green-ok); font-size:11px;">● запущена</span>' : ''}</div>
         <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-          <select data-ep="${base.id}" class="ep-status-select paper-select">
+          <select data-ep="${epId}" class="ep-status-select paper-select">
             <option value="locked" ${st==='locked'?'selected':''}>Закрыт</option>
             <option value="rules" ${st==='rules'?'selected':''}>Показать правила</option>
             <option value="active" ${st==='active'?'selected':''}>Идёт сейчас</option>
             <option value="done" ${st==='done'?'selected':''}>Завершена</option>
           </select>
-          ${(st==='active' && !state.episodes[base.id]?.started) ? `<button class="small-btn" data-quick-start-ep="${base.id}" style="border-color:var(--ember-bright); color:var(--ember-bright);">🎲 Начать игру</button>` : ''}
-          <button class="small-btn" data-open-ep="${base.id}">Открыть игру</button>
+          ${(st==='active' && !state.episodes[epId]?.started) ? `<button class="small-btn start-game-btn-highlight" data-quick-start-ep="${epId}">🎲 Начать игру</button>` : ''}
+          <button class="small-btn" data-open-ep="${epId}">Открыть игру</button>
+          ${meta.custom ? `<button class="small-btn danger" data-del-custom-ep="${epId}">Удалить</button>` : ''}
         </div>
       </div>
-      <input type="text" class="paper-input ep-name-input" data-ep="${base.id}" value="${escapeHtml(meta.name)}">
-      <textarea class="paper-input ep-rules-input" data-ep="${base.id}">${escapeHtml(meta.rules)}</textarea>
-      <button class="small-btn ep-save-btn" data-ep="${base.id}">Сохранить эпизод</button>
+      ${photoHtml}
+      <label class="small-btn" style="display:inline-block; margin-bottom:8px; cursor:pointer;">🖼 ${meta.photo ? 'Сменить фото' : 'Добавить фото'}<input type="file" accept="image/*" class="ep-photo-input" data-ep="${epId}" data-custom="${meta.custom}" style="display:none;"></label>
+      <input type="text" class="paper-input ep-name-input" data-ep="${epId}" value="${escapeHtml(meta.name)}">
+      <textarea class="paper-input ep-rules-input" data-ep="${epId}">${escapeHtml(meta.rules)}</textarea>
+      <button class="small-btn ep-save-btn" data-ep="${epId}" data-custom="${meta.custom}">Сохранить эпизод</button>
     </div>`;
   });
+  html += `<div class="admin-ep-block" style="border-color:var(--ember-bright);">
+    <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">+ НОВЫЙ ЭПИЗОД (без встроенных механик — просто чат, геолокация, статусы)</div>
+    <label class="small-btn" style="display:inline-block; margin-bottom:8px; cursor:pointer;">🖼 Фото<input type="file" accept="image/*" id="new-ep-photo-input" style="display:none;"></label>
+    <img id="new-ep-photo-preview" style="display:none; width:100%; max-width:220px; border-radius:4px; margin-bottom:8px;">
+    <input type="text" class="paper-input" id="new-ep-name" placeholder="Название эпизода">
+    <textarea class="paper-input" id="new-ep-rules" placeholder="Правила / описание"></textarea>
+    <button class="small-btn" id="new-ep-create">+ Создать эпизод</button>
+  </div>`;
   html += `<h2 class="section-title" style="margin-top:30px;">Общий банк</h2>
     <div class="admin-ep-block">
       <input type="number" class="paper-input" id="prize-input" placeholder="Сумма банка, ₽" style="width:200px;">
@@ -2460,18 +2534,84 @@ async function renderAdmin(){
     renderAdmin();
   }));
 
+  box.querySelectorAll('.ep-photo-input').forEach(input=>{
+    input.addEventListener('change', async (e)=>{
+      const file = e.target.files[0]; if(!file) return;
+      const reader = new FileReader();
+      reader.onload = async ()=>{
+        const compressed = await compressImage(reader.result, 500, 0.8);
+        const id = input.dataset.ep;
+        const isCustom = input.dataset.custom === 'true';
+        if(isCustom){
+          const list = state.customEpisodes || [];
+          const item = list.find(e=>e.id===id);
+          if(item){ item.photo = compressed; await sSet('custom_episodes', list); state.customEpisodes = list; }
+        } else {
+          const overrides = await sGet('episode_overrides', {});
+          overrides[id] = overrides[id] || {};
+          overrides[id].photo = compressed;
+          await sSet('episode_overrides', overrides);
+          state.episodeOverrides = overrides;
+        }
+        renderAdmin();
+      };
+      reader.readAsDataURL(file);
+    });
+  });
+
+  document.getElementById('new-ep-photo-input').addEventListener('change', (e)=>{
+    const file = e.target.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = async ()=>{
+      const compressed = await compressImage(reader.result, 500, 0.8);
+      document.getElementById('new-ep-photo-preview').src = compressed;
+      document.getElementById('new-ep-photo-preview').style.display = 'block';
+      document.getElementById('new-ep-photo-preview').dataset.photo = compressed;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  document.getElementById('new-ep-create').addEventListener('click', async ()=>{
+    const name = document.getElementById('new-ep-name').value.trim();
+    const rules = document.getElementById('new-ep-rules').value.trim();
+    if(!name){ alert('Введи название эпизода.'); return; }
+    const photo = document.getElementById('new-ep-photo-preview').dataset.photo || null;
+    const list = await sGet('custom_episodes', []);
+    const newId = 'c' + Date.now();
+    list.push({ id:newId, name, rules: rules || 'Правила пока не заданы.', photo });
+    await sSet('custom_episodes', list);
+    state.customEpisodes = list;
+    await pushEvent(`Создан новый эпизод «${name}»`);
+    renderAdmin();
+  });
+
+  box.querySelectorAll('[data-del-custom-ep]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    if(!confirm('Удалить этот эпизод целиком?')) return;
+    const list = (await sGet('custom_episodes', [])).filter(e=>e.id!==btn.dataset.delCustomEp);
+    await sSet('custom_episodes', list);
+    state.customEpisodes = list;
+    renderAdmin();
+  }));
+
   box.querySelectorAll('.ep-save-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = btn.dataset.ep;
+      const isCustom = btn.dataset.custom === 'true';
       const nameVal = box.querySelector(`.ep-name-input[data-ep="${id}"]`).value.trim();
       const rulesVal = box.querySelector(`.ep-rules-input[data-ep="${id}"]`).value.trim();
-      const overrides = await sGet('episode_overrides', {});
-      overrides[id] = { name: nameVal, rules: rulesVal };
-      await sSet('episode_overrides', overrides);
-      state.episodeOverrides = overrides;
-      await pushEvent(`Глава ${id} отредактирована создателем`);
+      if(isCustom){
+        const list = state.customEpisodes || [];
+        const item = list.find(e=>e.id===id);
+        if(item){ item.name = nameVal; item.rules = rulesVal; await sSet('custom_episodes', list); state.customEpisodes = list; }
+      } else {
+        const overrides = await sGet('episode_overrides', {});
+        overrides[id] = { ...(overrides[id]||{}), name: nameVal, rules: rulesVal };
+        await sSet('episode_overrides', overrides);
+        state.episodeOverrides = overrides;
+      }
+      await pushEvent(`Эпизод «${nameVal}» отредактирован создателем`);
       btn.textContent = 'Сохранено ✓';
-      setTimeout(()=>{ btn.textContent = 'Сохранить главу'; }, 1600);
+      setTimeout(()=>{ btn.textContent = 'Сохранить эпизод'; }, 1600);
     });
   });
 
