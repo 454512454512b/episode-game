@@ -791,16 +791,19 @@ const sbClient = (typeof supabase !== 'undefined' && SUPABASE_URL && SUPABASE_UR
    проверено диагностикой на двух разных проектах. app_storage при этом работает идеально.
    Поэтому вход сделан проще и надёжнее: готовые пары логин/пароль, зашитые прямо в код.
    Логин — служебный, для входа, его никто кроме владельца не видит. При первом входе
-   игрок сам придумывает отображаемое имя и фото — именно они показываются всем остальным. */
+   игрок сам придумывает отображаемое имя и фото — именно они показываются всем остальным.
+   Логины теперь короткие (без буквы фамилии) — у нескольких человек логин может совпадать
+   (например три "Никита"), их разделяет именно пароль — см. логику входа ниже, она
+   сначала находит ВСЕХ с этим логином, а затем среди них ищет совпадение по паролю. */
 const SEED_ACCOUNTS = [
-  {login:"Ксеня", password:"302737"}, {login:"Никита Т", password:"387881"}, {login:"Егор", password:"268879"},
+  {login:"Ксеня", password:"302737"}, {login:"Никита", password:"387881"}, {login:"Егор", password:"268879"},
   {login:"Злата", password:"234401"}, {login:"Арина", password:"688484"}, {login:"Костя", password:"843176"},
-  {login:"Никита Л", password:"211998"}, {login:"Сава", password:"260848"}, {login:"Саня", password:"367831"},
-  {login:"Тимур", password:"531762"}, {login:"Ваня Щ", password:"301295"}, {login:"Ваня К", password:"674915"},
-  {login:"Карина", password:"849828"}, {login:"Ульяна Ш", password:"889308"}, {login:"Ульяна Т", password:"396454"},
-  {login:"Дима М", password:"728982"}, {login:"Катя Е", password:"574315"}, {login:"Марго", password:"120388"},
-  {login:"Аля Г", password:"982220"}, {login:"Елисей Г", password:"232689"}, {login:"Ваня А", password:"710700"},
-  {login:"Никита Б", password:"136431"}, {login:"Маша Ф", password:"609774"}, {login:"Даня", password:"563766"},
+  {login:"Никита", password:"211998"}, {login:"Сава", password:"260848"}, {login:"Саня", password:"367831"},
+  {login:"Тимур", password:"531762"}, {login:"Ваня", password:"301295"}, {login:"Ваня", password:"674915"},
+  {login:"Карина", password:"849828"}, {login:"Ульяна", password:"889308"}, {login:"Ульяна", password:"396454"},
+  {login:"Дима", password:"728982"}, {login:"Катя", password:"574315"}, {login:"Марго", password:"120388"},
+  {login:"Аля", password:"982220"}, {login:"Елисей", password:"232689"}, {login:"Ваня", password:"710700"},
+  {login:"Никита", password:"136431"}, {login:"Маша", password:"609774"}, {login:"Даня", password:"563766"},
   {login:"Тим", password:"144119"}
 ];
 
@@ -1091,14 +1094,15 @@ document.getElementById('login-btn').addEventListener('click', async ()=>{
 
   try{
     const players = await ensurePlayersSeeded();
-    const found = players.find(p => (p.login||'').toLowerCase() === login.toLowerCase());
+    const candidates = players.filter(p => (p.login||'').toLowerCase() === login.toLowerCase());
 
-    if(!found){
+    if(!candidates.length){
       errorEl.textContent = 'Такого логина нет в списке. Проверь написание — логин и пароль выдал организатор.';
       nameInput.style.borderColor = '#c96b5c';
       return;
     }
-    if(found.password !== pass){
+    const found = candidates.find(p => p.password === pass);
+    if(!found){
       errorEl.textContent = 'Неверный пароль для этого логина.';
       passInput.style.borderColor = '#c96b5c';
       return;
@@ -1649,11 +1653,15 @@ async function openEpisode(id){
 
     let taggerBlock = '';
     if(ep.actions && !data.started){
-      /* Игра ещё не запущена — общая кнопка старта для ЛЮБОГО эпизода с действиями, не только с водящим */
-      const hint = ep.showTagger
-        ? 'Выберет случайного водящего среди тех, кто уже зашёл на сайт, и включит таймер.'
-        : 'Откроет действия этого эпизода всем и включит таймер (если задан).';
-      taggerBlock = `<div style="margin:14px 0;"><button class="action-btn" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">${hint}</div></div>`;
+      /* Кнопка старта видна только администратору — обычные игроки просто видят, что игра ждёт начала */
+      if(state.isAdmin){
+        const hint = ep.showTagger
+          ? 'Выберет случайного водящего среди тех, кто уже зашёл на сайт, и включит таймер.'
+          : 'Откроет действия этого эпизода всем и включит таймер (если задан).';
+        taggerBlock = `<div style="margin:14px 0;"><button class="action-btn" id="start-tagger-btn">🎲 Начать игру</button><div style="font-size:12px; color:var(--ash); margin-top:6px;">${hint}</div></div>`;
+      } else {
+        taggerBlock = `<div class="empty-state" style="margin:14px 0;">Эпизод открыт, но ещё не запущен организатором — подожди начала.</div>`;
+      }
     } else if(ep.showTagger && data.started){
       if(isTagger){
         taggerBlock = `<div class="tagger-line" style="color:var(--ember-bright);">Сейчас водишь ты!</div>${actionsHtml}`;
@@ -1671,8 +1679,6 @@ async function openEpisode(id){
       <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат эпизода</h3>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
-      <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Что происходит</h3>
-      <div id="episode-event-list"></div>
       </div>`;
   } else if(data.status === 'done'){
     html += `<div class="empty-state">Эпизод завершён. Итоги учтены в общем счёте.</div>`;
@@ -1686,12 +1692,16 @@ async function openEpisode(id){
     if(startBtn) startBtn.addEventListener('click', async ()=>{
       const pool = state.profiles.filter(p=>p.displayNameSet);
       if(ep.showTagger && pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
-      const durationStr = prompt('На сколько минут запустить игру? (можно оставить пустым — тогда без таймера)', '30');
-      const minutes = parseInt(durationStr, 10);
+
+      const hh = parseInt(prompt('Часы до конца игры? (0, если не нужно)', '0'), 10) || 0;
+      const mm = parseInt(prompt('Минуты? (0, если не нужно)', '30'), 10) || 0;
+      const ss = parseInt(prompt('Секунды? (0, если не нужно)', '0'), 10) || 0;
+      const totalMs = (hh*3600 + mm*60 + ss) * 1000;
+
       const eps = await sGet('episodes', {});
       eps[id] = eps[id] || {};
       eps[id].started = true;
-      eps[id].endsAt = (minutes && minutes > 0) ? (Date.now() + minutes*60000) : null;
+      eps[id].endsAt = totalMs > 0 ? (Date.now() + totalMs) : null;
       let chosen = null;
       if(ep.showTagger){
         chosen = pool[Math.floor(Math.random()*pool.length)];
@@ -1700,7 +1710,8 @@ async function openEpisode(id){
       await sSet('episodes', eps);
       await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
       const link = deepLink('episode', id);
-      const durTxt = minutes>0 ? ` (на ${minutes} мин.)` : '';
+      const pad = n=> String(n).padStart(2,'0');
+      const durTxt = totalMs>0 ? ` (на ${pad(hh)}:${pad(mm)}:${pad(ss)})` : '';
       const msg = chosen ? `🎲 Игра началась! Первым водит: ${chosen.name}${durTxt}` : `🎲 Эпизод «${ep.name}» начался!${durTxt}`;
       await pushEvent(msg);
       sendPushToAll('EPISODE', `${msg}\n${link}`);
@@ -1718,7 +1729,6 @@ async function openEpisode(id){
     });
     renderGeoList(id);
     loadChat(id);
-    renderEpisodeEvents();
     document.getElementById('chat-send').addEventListener('click', ()=> sendChat(id));
     document.getElementById('chat-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(id); });
     document.querySelectorAll('.game-action-btn').forEach(btn=> btn.addEventListener('click', async ()=>{
@@ -1752,7 +1762,7 @@ async function openEpisode(id){
       openEpisode(id);
     }));
     if(state.chatPoll) clearInterval(state.chatPoll);
-    state.chatPoll = setInterval(()=> { loadChat(id); renderGeoList(id); renderEpisodeEvents(); }, 4500);
+    state.chatPoll = setInterval(()=> { loadChat(id); renderGeoList(id); }, 4500);
   }
 }
 
@@ -1790,15 +1800,6 @@ async function renderGeoList(id){
     if(entries.length === 1) gm.map.setView([entries[0].lat, entries[0].lng], 15);
     setTimeout(()=> gm.map.invalidateSize(), 150);
   }
-}
-
-async function renderEpisodeEvents(){
-  const el = document.getElementById('episode-event-list');
-  if(!el) return;
-  const events = await sGet('events', []);
-  el.innerHTML = events.length
-    ? events.slice(0,15).map((e,i)=> `<div class="event-item" style="animation-delay:${i*0.03}s"><span class="ts mono">${timeAgo(e.ts)}</span>${escapeHtml(e.text)}</div>`).join('')
-    : '<div class="empty-state">Пока тихо</div>';
 }
 async function loadChat(id){
   const chat = await sGet('chat_ep'+id, []);
