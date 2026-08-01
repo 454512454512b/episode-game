@@ -496,10 +496,29 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
   15%{ opacity:1; transform:translate(var(--bx1), var(--by1)) scale(1.15) rotate(var(--br));}
   100%{ opacity:0; transform:translate(var(--bx2), var(--by2)) scale(.7) rotate(var(--br2));}
 }
-.money-bill{
-  position:absolute; top:-60px; font-size:32px; opacity:0;
+.bill-piece, .coin-piece{
+  position:absolute; top:-60px; opacity:0;
   animation-name: moneyFall; animation-timing-function: ease-in; animation-fill-mode: forwards;
-  filter: drop-shadow(0 0 6px rgba(0,0,0,.5));
+}
+.bill-piece{
+  width:42px; height:24px; background:linear-gradient(135deg,#3a7d44,#2d5f34);
+  border:1.5px solid #8fce9c; border-radius:3px; box-shadow:0 0 8px rgba(0,0,0,.5);
+  display:flex; align-items:center; justify-content:center; overflow:hidden;
+}
+.bill-stripe{ position:absolute; left:0; top:0; bottom:0; width:6px; background:rgba(255,255,255,.25); }
+.bill-num{ font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12px; color:#dff5e2; letter-spacing:.04em; }
+.bill-piece-portrait{
+  width:96px; height:52px; flex-direction:column; gap:2px;
+  background:linear-gradient(135deg,#2d5f34,#1f4527); border-width:2px;
+}
+.bill-portrait{
+  width:34px; height:34px; border-radius:50%; background-size:cover; background-position:center;
+  border:1.5px solid #dff5e2; filter:sepia(1) hue-rotate(60deg) saturate(2.2) contrast(1.15) brightness(0.95);
+}
+.coin-piece{
+  width:20px; height:20px; border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #ffe9a8, #d9a441 65%, #a97a1f);
+  border:1.5px solid #7a5613; box-shadow:0 0 6px rgba(0,0,0,.5);
 }
 @keyframes moneyFall{
   0%{ transform:translateY(0) rotate(0deg); opacity:0;}
@@ -586,7 +605,6 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     <input type="password" id="pass-input" class="paper-input" placeholder="Пароль" maxlength="32" autocomplete="off" style="margin-top:10px;">
     <div id="reg-error" class="reg-error"></div>
     <button class="enter-btn" id="login-btn">Войти в игру</button>
-    <button class="small-btn" id="preview-btn" style="width:100%; margin-top:12px; padding:12px;">👁 Предварительный просмотр (без входа)</button>
   </div>
 </div>
 
@@ -724,6 +742,10 @@ const FIREBASE_CONFIG = {
 };
 const FIREBASE_VAPID_KEY = "BPnnb3AHjfqWyqsAv7c4BFIeTHoIPJxxkBqbMCVR8Ft4GSnVXu3IgwiQmU4qajgYEvApxDEk2osQp52o093TQUw";
 
+/* Портрет для "именных" купюр в денежном дожде — стилизуется под гравюру на банкноте (чёрно-белый + зелёный дуотон).
+   Пусто, пока не прислано фото — с пустым значением просто не будет портретных купюр, обычные всё равно работают. */
+const MONEY_PORTRAIT_DATA_URL = "";
+
 /* ============ АВТОМАТИЧЕСКАЯ РАССЫЛКА PUSH (через серверную функцию Supabase) ============ */
 const PUSH_FUNCTION_URL = SUPABASE_URL + "/functions/v1/send-push";
 const PUSH_FUNCTION_SECRET = "z5h2ADHuzK1Cjkmh5oPUeSpAlmR6G-uq"; // должен совпадать с FUNCTION_SECRET в самой функции
@@ -746,6 +768,90 @@ async function getAdminPassword(){
   const stored = await sGet('admin_password_override', null);
   return stored || ADMIN_PASSWORD_DEFAULT;
 }
+
+/* ============ БАНК СОЦИАЛЬНЫХ ЗАДАНИЙ ============
+   Не привязаны ни к одной конкретной игре — организатор публикует их отдельно через Админку,
+   они появляются в Событиях как обычная задача. Баллы за выполнение начисляет организатор вручную,
+   когда увидит доказательство (видео/фото/рассказ) — как и во всех остальных случаях на сайте. */
+const SOCIAL_TASKS = [
+  "Снять смешное видео с 5 разными прохожими, где каждый говорит одну и ту же нелепую фразу",
+  "Взять автограф у случайного человека на улице, представившись «известным блогером»",
+  "Станцевать 15 секунд под любую музыку прямо посреди людной улицы",
+  "Уговорить незнакомца сфотографироваться с вами в нелепой позе",
+  "Спросить у 5 прохожих дорогу до места, где вы сейчас стоите",
+  "Спеть куплет любой песни в лифте или на остановке при свидетелях",
+  "Сделать комплимент 10 разным незнакомцам за 10 минут и снять реакции",
+  "Устроить мини-опрос прохожих «что такое счастье» — записать 3 самых странных ответа",
+  "Попросить у случайного человека рецепт борща на камеру",
+  "Сыграть с прохожим в камень-ножницы-бумага и заснять эмоции победителя",
+  "Найти человека в одежде того же цвета, что и на вас, и сфотографироваться вместе",
+  "Устроить импровизированный «концерт» — спеть а капелла для случайных зрителей",
+  "Попросить незнакомца оценить вашу игру на воображаемой гитаре",
+  "Собрать 3 подписи прохожих под шуточной «петицией» (тему придумать самим)",
+  "Сделать групповое приветственное видео с любыми 5 людьми, встреченными за 10 минут",
+  "Провести интервью с прохожим на тему «как прошёл ваш день» в стиле теленовостей",
+  "Попросить кого-то незнакомого дать вам «мудрый совет на будущее» и записать",
+  "Устроить флешмоб на одну секунду — подпрыгнуть одновременно с 3 разными людьми",
+  "Найти человека, готового пожать вам руку и сказать «поздравляю с успехом»",
+  "Спросить у прохожего, который час, притворяясь, что у вас сломались часы (на камеру)",
+  "Сделать «интервью с эхом» — задать вопрос и попросить человека ответить максимально громко",
+  "Уговорить кого-то сфотографироваться с вами как «старые знакомые», которых давно не видели",
+  "Попросить незнакомца придумать вам смешное прозвище за 10 секунд",
+  "Записать видео, где 3 разных человека желают удачи «команде EPISODE»",
+  "Сыграть в «море волнуется раз» с любым количеством случайных прохожих",
+  "Устроить мини-викторину для прохожего — 1 вопрос про город, записать ответ",
+  "Попросить кого-то громко и убедительно сказать «сегодня отличный день»",
+  "Найти человека с собакой и вежливо попросить познакомить вас с питомцем на камеру",
+  "Устроить «фотосессию» с любым памятником или статуей в городе — 3 разные позы",
+  "Спросить у 3 прохожих, верят ли они в тайные организации (и записать реакции)",
+  "Попросить незнакомца прочитать одно предложение с максимальным драматизмом",
+  "Найти любого человека в кепке и обменяться с ним воображаемым секретным рукопожатием",
+  "Устроить конкурс «гляделки» с прохожим (по согласию) и заснять итог",
+  "Попросить кого-то изобразить походку супергероя на камеру",
+  "Собрать 3 разных мнения прохожих о лучшей еде в городе",
+  "Попросить незнакомца дать «пресс-конференцию» на любую случайную тему",
+  "Найти человека с зонтом (даже без дождя) и попросить попозировать «как в кино»",
+  "Устроить импровизированный «бой на воображаемых мечах» с согласившимся прохожим",
+  "Попросить 3 людей сказать одно слово, которое лучше всего описывает этот город",
+  "Записать, как случайный человек учит вас одному слову на другом языке",
+  "Попросить незнакомца изобразить эмоцию «удивление» максимально театрально",
+  "Найти человека с рюкзаком и спросить, что самое странное там лежит",
+  "Устроить «фото-эстафету» — сфотографироваться в одинаковой позе с 3 разными людьми подряд",
+  "Попросить прохожего дать вам «слово дня» и объяснить, почему именно оно",
+  "Спеть на камеру дуэтом с любым согласившимся незнакомцем — хотя бы одну строчку",
+  "Найти человека в наушниках и спросить, какая песня сейчас играет",
+  "Устроить «интервью для истории» — спросить прохожего, что он пожелал бы людям через 100 лет",
+  "Попросить незнакомца изобразить любое животное без слов — угадать, какое",
+  "Собрать «рекорд города» — сколько людей одновременно скажут «эпизод» по вашей команде",
+  "Попросить кого-то дать вам пять и сказать «удачи в игре» максимально серьёзно",
+  "Устроить финальное общее фото — сколько прохожих согласится встать в один общий кадр за 5 минут"
+];
+
+/* Второй банк — не социальные с прохожими, а творческие/строительные/дачные задания.
+   Специально прописаны максимально конкретно, без размытых формулировок — как просил Даня. */
+const CREATIVE_TASKS = [
+  "Построить трон из подручных материалов (картон, палки, ткань — что найдётся) и сфотографироваться на нём как король/королева",
+  "Собрать тележку или тачку на колёсах, которая своим ходом (толчком) проедет минимум 10 метров без поломки",
+  "Слепить из пластилина/фольги/подручных материалов фигурку любого другого игрока — максимально похожую",
+  "Построить башню из подручных предметов высотой минимум с ваш собственный рост",
+  "Сделать самодельный «флаг EPISODE» — нарисовать и повесить его дома или во дворе на видном месте",
+  "Собрать «катапульту» из подручных материалов (ложка, резинка, палки) и запустить ей любой лёгкий предмет минимум на 2 метра",
+  "Сделать поделку-оберег для команды из природных материалов (шишки, ветки, листья) за 15 минут",
+  "Построить мини-крепость из подушек и одеял и провести в ней ровно 10 минут",
+  "Сделать самодельные «медали EPISODE» из картона для всей своей команды",
+  "Собрать из бумаги самолётик, который пролетит минимум 5 метров, и заснять полёт",
+  "Сделать «капсулу времени» — записка + мелкий предмет в банке, закопать или спрятать до конца сезона",
+  "Построить домино минимум из 30 предметов (что найдётся дома) и заснять, как оно падает",
+  "Сфотографироваться в костюме, полностью собранном из подручных вещей за 10 минут — тема «супергерой»",
+  "Сделать бумажный кораблик и пустить его плавать в любой луже, ванне или ручье — заснять заплыв",
+  "Построить мост между двумя стульями из подручных материалов, который выдержит вес одной книги",
+  "Слепить снеговика или его летнюю альтернативу — «песочника»/«травника» из того, что под рукой",
+  "Сделать самодельные «часы EPISODE» — нарисовать циферблат и повесить у себя в комнате",
+  "Собрать самую высокую башню из книг, какая не упадёт, и сфотографироваться рядом",
+  "Сделать «секретное послание» невидимыми чернилами (лимонный сок + утюг) и передать другому игроку",
+  "Построить лабиринт для мяча из коробок или книг и провести мяч через него с закрытыми глазами"
+];
+
 const EPISODES = [
   {id:1, name:"Городские Салки", icon:"🏃", rules:"Один водящий стартует и должен найти и осалить любого участника по городу в заданных границах. Осалённый сам становится водящим. Нельзя прятаться в закрытых помещениях дольше 5 минут. Побеждает тот, кого ни разу не осалили, или тот, кто был водящим меньше всего.",
     showTagger:true,
@@ -1128,27 +1234,6 @@ document.getElementById('login-btn').addEventListener('click', async ()=>{
   }
 });
 
-/* ===== ВРЕМЕННО: предварительный просмотр без входа — для тестирования с телефона.
-   Показывает настоящие живые данные сайта (список игроков и т.д.), но не пишет ничего от чужого имени —
-   действия вроде чата/геолокации будут отправляться как "Гость (просмотр)". Удалить кнопку, когда не нужна. ===== */
-document.getElementById('preview-btn').addEventListener('click', async ()=>{
-  const btn = document.getElementById('preview-btn');
-  const errorEl = document.getElementById('reg-error');
-  errorEl.textContent = '';
-  if(!sbClient){ errorEl.textContent = 'Supabase не подключён — проверь ключи в коде.'; return; }
-  btn.disabled = true;
-  const originalText = btn.textContent;
-  btn.textContent = 'Загружаю...';
-  try{
-    state.me = { id: 'preview-guest', name: 'Гость (просмотр)', photo: null, points: 0, achievements: [], displayNameSet: true, login: null };
-    await enterApp();
-  } catch(e){
-    errorEl.textContent = 'Не получилось открыть предпросмотр: ' + errorToString(e);
-    console.error('preview-btn error:', e);
-    btn.disabled = false; btn.textContent = originalText;
-  }
-});
-
 document.getElementById('first-time-continue-btn').addEventListener('click', async ()=>{
   const card = document.getElementById('first-time-card');
   const errorEl = document.getElementById('first-time-error');
@@ -1294,24 +1379,44 @@ function playMoneyRain(){
   if(!layer) return;
   layer.style.display = 'block';
   layer.innerHTML = '';
-  const bills = ['💵','💶','💴','💷'];
-  const DURATION_MS = 18000;
+  const DURATION_MS = 5000;
   const spawnInterval = setInterval(()=>{
-    const bill = document.createElement('div');
-    bill.className = 'money-bill';
-    bill.textContent = bills[Math.floor(Math.random()*bills.length)];
+    const roll = Math.random();
+    const piece = document.createElement('div');
+
+    if(roll < 0.35){
+      /* монета */
+      piece.className = 'coin-piece';
+    } else if(roll < 0.8 || !MONEY_PORTRAIT_DATA_URL){
+      /* обычная быстрая купюра с надписью EPISODE */
+      piece.className = 'bill-piece';
+      const stripe = document.createElement('div'); stripe.className = 'bill-stripe';
+      const num = document.createElement('div'); num.className = 'bill-num'; num.textContent = 'EPISODE';
+      piece.appendChild(stripe); piece.appendChild(num);
+    } else {
+      /* крупная медленная "именная" купюра — портрет в стиле гравюры на банкноте */
+      piece.className = 'bill-piece bill-piece-portrait';
+      const portrait = document.createElement('div');
+      portrait.className = 'bill-portrait';
+      portrait.style.backgroundImage = `url(${MONEY_PORTRAIT_DATA_URL})`;
+      piece.appendChild(portrait);
+      const num = document.createElement('div'); num.className = 'bill-num'; num.textContent = 'EPISODE';
+      piece.appendChild(num);
+    }
+
+    const isBig = piece.classList.contains('bill-piece-portrait');
     const left = Math.random()*100;
-    const fallTime = 3.2 + Math.random()*2.4;
-    const spin = (Math.random()>0.5 ? 1 : -1) * (220 + Math.random()*260);
-    bill.style.left = left + 'vw';
-    bill.style.setProperty('--spin', spin+'deg');
-    bill.style.animationDuration = fallTime + 's';
-    layer.appendChild(bill);
-    setTimeout(()=> bill.remove(), fallTime*1000 + 200);
-  }, 160);
+    const fallTime = isBig ? (3.5 + Math.random()*2) : (1.6 + Math.random()*1.3);
+    const spin = (Math.random()>0.5 ? 1 : -1) * (isBig ? (90 + Math.random()*90) : (260 + Math.random()*300));
+    piece.style.left = left + 'vw';
+    piece.style.setProperty('--spin', spin+'deg');
+    piece.style.animationDuration = fallTime + 's';
+    layer.appendChild(piece);
+    setTimeout(()=> piece.remove(), fallTime*1000 + 200);
+  }, 70);
   setTimeout(()=>{
     clearInterval(spawnInterval);
-    setTimeout(()=>{ layer.style.display = 'none'; layer.innerHTML = ''; }, 3500);
+    setTimeout(()=>{ layer.style.display = 'none'; layer.innerHTML = ''; }, 2000);
   }, DURATION_MS);
 }
 
@@ -1336,6 +1441,7 @@ function startBackgroundPollers(){
     state.episodes = await sGet('episodes', {});
     renderGlobalTaggerBanner();
     if(document.getElementById('view-home').classList.contains('active')) renderHeader();
+    await checkHourlyAwards();
   }, 15000);
   setInterval(tickGlobalCountdownDisplay, 1000);
   setInterval(fetchActiveCountdown, 5000);
@@ -1494,6 +1600,7 @@ async function refreshAll(){
   updateDrawerUserCard();
   updateHeaderBank();
   if(__lastKnownPrizePool === null) __lastKnownPrizePool = await sGet('prize_pool', 0);
+  await checkHourlyAwards();
 }
 
 let __countdownIntervalId = null;
@@ -1538,6 +1645,74 @@ function renderGlobalTaggerBanner(){
 function deepLink(kind, id){
   const base = location.origin + location.pathname;
   return `${base}?open=${kind}-${id}`;
+}
+
+/* Запуск игры — общая логика, вызывается и из Админки напрямую, и из кнопки внутри самой главы.
+   Помимо рандомайзера водящего и таймера, ставит метку startedAt/lastHourlyAward для автоматического
+   почасового начисления баллов (см. checkHourlyAwards). */
+async function startEpisodeGame(id){
+  const base = EPISODES.find(e=>e.id===id);
+  const pool = state.profiles.filter(p=>p.displayNameSet);
+  if(base.showTagger && pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
+
+  const hh = parseInt(prompt('Часы до конца игры? (0, если не нужно)', '0'), 10) || 0;
+  const mm = parseInt(prompt('Минуты? (0, если не нужно)', '30'), 10) || 0;
+  const ss = parseInt(prompt('Секунды? (0, если не нужно)', '0'), 10) || 0;
+  const totalMs = (hh*3600 + mm*60 + ss) * 1000;
+
+  const eps = await sGet('episodes', {});
+  eps[id] = eps[id] || {};
+  eps[id].started = true;
+  eps[id].endsAt = totalMs > 0 ? (Date.now() + totalMs) : null;
+  eps[id].startedAt = Date.now();
+  eps[id].lastHourlyAward = Date.now();
+  let chosen = null;
+  if(base.showTagger){
+    chosen = pool[Math.floor(Math.random()*pool.length)];
+    eps[id].tagger = chosen.id;
+  }
+  await sSet('episodes', eps);
+  await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
+  state.episodes = eps;
+  const link = deepLink('episode', id);
+  const pad = n=> String(n).padStart(2,'0');
+  const durTxt = totalMs>0 ? ` (на ${pad(hh)}:${pad(mm)}:${pad(ss)})` : '';
+  const msg = chosen ? `🎲 Игра началась! Первым водит: ${chosen.name}${durTxt}` : `🎲 Эпизод «${base.name}» начался!${durTxt}`;
+  await pushEvent(msg);
+  sendPushToAll('EPISODE', `${msg}\n${link}`);
+  if(document.getElementById('view-episodes').classList.contains('active')) openEpisode(id);
+}
+
+/* ============ АВТОМАТИЧЕСКОЕ ПОЧАСОВОЕ НАЧИСЛЕНИЕ (для глав с водящим) ============
+   Работает "догоняющим" способом: при каждом обновлении данных на любом устройстве —
+   считаем, сколько целых часов прошло с последнего начисления, и начисляем все разом.
+   Не требует, чтобы сайт был открыт именно в момент истечения часа — достаточно,
+   чтобы кто-нибудь открыл сайт хотя бы раз за прошедшее время. */
+async function checkHourlyAwards(){
+  const eps = await sGet('episodes', {});
+  let changed = false;
+  for(const base of EPISODES){
+    if(!base.showTagger) continue;
+    const data = eps[base.id];
+    if(!data || data.status !== 'active' || !data.started || !data.lastHourlyAward) continue;
+
+    const hoursElapsed = Math.floor((Date.now() - data.lastHourlyAward) / 3600000);
+    if(hoursElapsed < 1) continue;
+
+    const players = await sGet('players', []);
+    const eligible = players.filter(p => p.displayNameSet && p.id !== data.tagger);
+    eligible.forEach(p=> p.points = (p.points||0) + hoursElapsed);
+    await sSet('players', players);
+    await pushEvent(`⏱ Прошёл ${hoursElapsed} ч. — все, кроме водящего, получили +${hoursElapsed} балл(ов) в «${base.name}»`);
+
+    data.lastHourlyAward += hoursElapsed * 3600000;
+    changed = true;
+  }
+  if(changed){
+    await sSet('episodes', eps);
+    state.episodes = eps;
+    state.profiles = await fetchProfiles();
+  }
 }
 
 function renderHeader(){
@@ -1670,9 +1845,17 @@ async function openEpisode(id){
       }
     }
 
+    const teamsBlockHtml = (id === 4 && state.isAdmin) ? `
+      <div style="margin:14px 0; padding:12px; border:1px solid var(--ash-dim); border-radius:2px;">
+        <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">ОРГАНИЗАТОРУ</div>
+        <button class="action-btn" id="episode-split-teams-btn">🎲 Разделить на команды</button>
+        <div id="episode-teams-result" style="margin-top:10px; font-family:'JetBrains Mono',monospace; font-size:13px;"></div>
+      </div>` : '';
+
     html += `<div class="live-block"><div class="live-tag">● В ЭФИРЕ</div>
       ${taggerBlock}
       ${(ep.actions && !ep.showTagger && data.started) ? actionsHtml : ''}
+      ${teamsBlockHtml}
       <button class="action-btn" id="share-geo-btn">Поделиться геолокацией</button>
       <div id="geo-map-${id}" style="height:260px; border-radius:2px; margin-top:10px; display:none;"></div>
       <div class="geo-list" id="geo-list"></div>
@@ -1687,36 +1870,24 @@ async function openEpisode(id){
   }
   document.getElementById('episode-detail-content').innerHTML = html;
 
+  const episodeSplitBtn = document.getElementById('episode-split-teams-btn');
+  if(episodeSplitBtn){
+    episodeSplitBtn.addEventListener('click', async ()=>{
+      const pool = state.profiles.filter(p=>p.displayNameSet);
+      if(pool.length < 2){ alert('Нужно минимум 2 зашедших игрока.'); return; }
+      const shuffled = [...pool].sort(()=> Math.random()-0.5);
+      const half = Math.ceil(shuffled.length/2);
+      const teams = { A: shuffled.slice(0,half).map(p=>p.id), B: shuffled.slice(half).map(p=>p.id) };
+      await sSet('teams_ep4', teams);
+      await pushEvent('🚩 Ночной дозор — команды разделены заново');
+      renderTeamsResult(teams);
+    });
+    sGet('teams_ep4', null).then(saved=>{ if(saved) renderTeamsResult(saved); });
+  }
+
   if(data.status === 'active'){
     const startBtn = document.getElementById('start-tagger-btn');
-    if(startBtn) startBtn.addEventListener('click', async ()=>{
-      const pool = state.profiles.filter(p=>p.displayNameSet);
-      if(ep.showTagger && pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
-
-      const hh = parseInt(prompt('Часы до конца игры? (0, если не нужно)', '0'), 10) || 0;
-      const mm = parseInt(prompt('Минуты? (0, если не нужно)', '30'), 10) || 0;
-      const ss = parseInt(prompt('Секунды? (0, если не нужно)', '0'), 10) || 0;
-      const totalMs = (hh*3600 + mm*60 + ss) * 1000;
-
-      const eps = await sGet('episodes', {});
-      eps[id] = eps[id] || {};
-      eps[id].started = true;
-      eps[id].endsAt = totalMs > 0 ? (Date.now() + totalMs) : null;
-      let chosen = null;
-      if(ep.showTagger){
-        chosen = pool[Math.floor(Math.random()*pool.length)];
-        eps[id].tagger = chosen.id;
-      }
-      await sSet('episodes', eps);
-      await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
-      const link = deepLink('episode', id);
-      const pad = n=> String(n).padStart(2,'0');
-      const durTxt = totalMs>0 ? ` (на ${pad(hh)}:${pad(mm)}:${pad(ss)})` : '';
-      const msg = chosen ? `🎲 Игра началась! Первым водит: ${chosen.name}${durTxt}` : `🎲 Эпизод «${ep.name}» начался!${durTxt}`;
-      await pushEvent(msg);
-      sendPushToAll('EPISODE', `${msg}\n${link}`);
-      openEpisode(id);
-    });
+    if(startBtn) startBtn.addEventListener('click', async ()=> startEpisodeGame(id));
 
     document.getElementById('share-geo-btn').addEventListener('click', ()=>{
       if(!navigator.geolocation){ alert('Геолокация недоступна в этом браузере'); return; }
@@ -2013,11 +2184,6 @@ function renderProfile(){
       <div class="mono" style="color:var(--ash);font-size:12px;margin-top:6px;">№${p.number} · ${p.points} баллов</div>
     </div>
     <h2 class="section-title">Ачивки</h2>${badges}
-    <h2 class="section-title" style="margin-top:26px;">⚙️ Уведомления</h2>
-    <div style="max-width:360px; margin:0 auto; font-size:14px;">
-      <button class="small-btn" id="push-enable-btn" style="width:100%; padding:10px;">${p.pushToken ? '🔔 Уведомления включены' : '🔔 Разрешить уведомления'}</button>
-      <div id="push-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:8px; text-align:center;"></div>
-    </div>
     <h2 class="section-title" style="margin-top:26px;">🔒 Сменить пароль</h2>
     <div style="max-width:320px; margin:0 auto;">
       <input type="password" id="pw-current-input" class="paper-input" placeholder="Текущий пароль" style="margin-bottom:10px;">
@@ -2035,29 +2201,6 @@ function renderProfile(){
 
   const adminLinkBtn = document.getElementById('open-admin-from-profile-btn');
   if(adminLinkBtn) adminLinkBtn.addEventListener('click', ()=> showView('admin'));
-
-  document.getElementById('push-enable-btn').addEventListener('click', async ()=>{
-    const btn = document.getElementById('push-enable-btn');
-    const status = document.getElementById('push-status');
-    btn.disabled = true; status.textContent = 'Спрашиваю разрешение...'; status.style.color = 'var(--ember-bright)';
-    if(typeof window.enablePushNotifications !== 'function'){
-      status.textContent = 'Firebase ещё не загрузился — подожди секунду и попробуй снова.'; status.style.color = '#ff8a75'; btn.disabled = false; return;
-    }
-    const result = await window.enablePushNotifications();
-    if(!result.ok){
-      status.textContent = 'Не получилось: ' + result.error; status.style.color = '#ff8a75'; btn.disabled = false; return;
-    }
-    const players = await sGet('players', []);
-    const target = players.find(x=>x.id===p.id);
-    if(target){
-      target.pushToken = result.token;
-      await sSet('players', players);
-      state.me = target; state.profiles = await fetchProfiles();
-    }
-    status.textContent = 'Готово ✓ Уведомления включены на этом устройстве.'; status.style.color = 'var(--ember-bright)';
-    btn.textContent = '🔔 Уведомления включены';
-    btn.disabled = false;
-  });
 
   document.getElementById('pw-change-btn').addEventListener('click', async ()=>{
     const cur = document.getElementById('pw-current-input').value.trim();
@@ -2149,23 +2292,27 @@ async function renderAdmin(){
     <h2 class="section-title" style="margin-bottom:0;">Панель создателя</h2>
     <button class="small-btn" id="admin-theme-toggle">${state.adminLight ? '🌙 Тёмная тема' : '☀ Светлая тема'}</button>
   </div>`;
-  html += `<h2 class="section-title">Управление главами</h2>`;
+  html += `<h2 class="section-title">Управление эпизодами</h2>`;
   EPISODES.forEach(base=>{
     const meta = getEpisodeMeta(base.id);
     const st = state.episodes[base.id]?.status || 'locked';
     html += `<div class="admin-ep-block">
       <div class="row1">
-        <div><span class="ep-icon" style="font-size:18px;">${meta.icon}</span> ${CHAPTER_WORD} ${base.id}</div>
-        <select data-ep="${base.id}" class="ep-status-select paper-select">
-          <option value="locked" ${st==='locked'?'selected':''}>Закрыт</option>
-          <option value="rules" ${st==='rules'?'selected':''}>Показать правила</option>
-          <option value="active" ${st==='active'?'selected':''}>Идёт сейчас</option>
-          <option value="done" ${st==='done'?'selected':''}>Завершена</option>
-        </select>
+        <div><span class="ep-icon" style="font-size:18px;">${meta.icon}</span> ${CHAPTER_WORD} ${base.id}${state.episodes[base.id]?.started ? ' <span style="color:var(--green-ok); font-size:11px;">● запущена</span>' : ''}</div>
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <select data-ep="${base.id}" class="ep-status-select paper-select">
+            <option value="locked" ${st==='locked'?'selected':''}>Закрыт</option>
+            <option value="rules" ${st==='rules'?'selected':''}>Показать правила</option>
+            <option value="active" ${st==='active'?'selected':''}>Идёт сейчас</option>
+            <option value="done" ${st==='done'?'selected':''}>Завершена</option>
+          </select>
+          ${(st==='active' && !state.episodes[base.id]?.started) ? `<button class="small-btn" data-quick-start-ep="${base.id}" style="border-color:var(--ember-bright); color:var(--ember-bright);">🎲 Начать игру</button>` : ''}
+          <button class="small-btn" data-open-ep="${base.id}">Открыть игру</button>
+        </div>
       </div>
       <input type="text" class="paper-input ep-name-input" data-ep="${base.id}" value="${escapeHtml(meta.name)}">
       <textarea class="paper-input ep-rules-input" data-ep="${base.id}">${escapeHtml(meta.rules)}</textarea>
-      <button class="small-btn ep-save-btn" data-ep="${base.id}">Сохранить главу</button>
+      <button class="small-btn ep-save-btn" data-ep="${base.id}">Сохранить эпизод</button>
     </div>`;
   });
   html += `<h2 class="section-title" style="margin-top:30px;">Общий банк</h2>
@@ -2182,12 +2329,25 @@ async function renderAdmin(){
     </div>
     <div id="admin-events-list"></div>
   `;
+  html += `<h2 class="section-title" style="margin-top:30px;">🎭 Социальные задания</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Не привязаны к конкретной игре — жмёшь «+» рядом с заданием, оно сразу публикуется как обычное Событие. Баллы за выполнение начисляешь вручную, когда увидишь доказательство (видео/фото/рассказ).</div>
+      <div id="social-tasks-list" style="max-height:300px; overflow-y:auto; border:1px solid var(--ash-dim); border-radius:2px; padding:8px;"></div>
+    </div>
+  `;
+  html += `<h2 class="section-title" style="margin-top:30px;">🛠 Творческие задания</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Не привязаны к прохожим/улице — сделать/построить/смастерить своими руками. Тот же принцип: «+» публикует как Событие.</div>
+      <div id="creative-tasks-list" style="max-height:300px; overflow-y:auto; border:1px solid var(--ash-dim); border-radius:2px; padding:8px;"></div>
+    </div>
+  `;
   html += `<h2 class="section-title" style="margin-top:30px;">🎯 Метки — Охота за метками</h2>
     <div class="admin-ep-block">
-      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Кликни по карте, чтобы поставить точку — появится форма с описанием, фото и/или ссылкой на видео. Метка сразу сохраняется и получает порядковый номер.</div>
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Кликни по карте, чтобы поставить точку — появится форма с описанием, фото и/или ссылкой на видео. Метка сразу сохраняется и получает порядковый номер. Если карта не грузится или неудобна — есть кнопка «+ без карты» ниже, можно просто текстом описать локацию.</div>
       <div id="admin-markers-map" style="height:320px; border-radius:2px; margin-bottom:12px;"></div>
+      <button class="small-btn" id="marker-add-no-map-btn" style="margin-bottom:12px;">➕ Добавить метку без карты (текстом)</button>
       <div id="marker-form" style="display:none; border:1px solid var(--ash-dim); padding:12px; border-radius:2px; margin-bottom:12px;">
-        <div class="mono" style="font-size:11px; color:var(--ash); margin-bottom:8px;">Новая метка — координаты: <span id="marker-coords"></span></div>
+        <div class="mono" style="font-size:11px; color:var(--ash); margin-bottom:8px;" id="marker-coords-line">Новая метка — координаты: <span id="marker-coords"></span></div>
         <textarea class="paper-input" id="marker-desc" placeholder="Краткое описание — где именно спрятано" style="margin-bottom:8px;"></textarea>
         <input type="text" class="paper-input" id="marker-video" placeholder="Ссылка на видео (YouTube/VK) — необязательно" style="margin-bottom:8px;">
         <label class="photo-frame" id="marker-photo-frame" for="marker-photo-input" style="width:80px; height:80px; margin-bottom:8px;">
@@ -2201,16 +2361,6 @@ async function renderAdmin(){
         </div>
       </div>
       <div id="admin-markers-list"></div>
-    </div>
-  `;
-  html += `<h2 class="section-title" style="margin-top:30px; color:#ff8a75;">⚠️ Полный сброс сезона</h2>
-    <div class="admin-ep-block" style="border-color:#ff5c5c;">
-      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">
-        Возвращает все ${SEED_ACCOUNTS.length} логинов/паролей в исходное состояние — как будто никто ещё ни разу не заходил: без имени, без фото, без баллов. Банк обнуляется. Статусы всех Глав и Событий сбрасываются на «Закрыта».<br><br>
-        <b>Логины и пароли остаются теми же</b> — можно будет заходить теми же данными заново. Метки для Охоты и пароль администратора <b>не трогаются</b>.<br><br>
-        Используй это только перед настоящим стартом сезона, когда закончили тестировать.
-      </div>
-      <button class="small-btn danger" id="full-season-reset-btn">Сбросить весь сезон</button>
     </div>
   `;
   html += `<h2 class="section-title" style="margin-top:30px;">Готовые аккаунты</h2>
@@ -2247,6 +2397,16 @@ async function renderAdmin(){
     <h2 class="section-title" style="margin-top:30px;">Игроки</h2>
     <div id="admin-players-list"></div>
   `;
+  html += `<h2 class="section-title" style="margin-top:30px; color:#ff8a75;">⚠️ Полный сброс сезона</h2>
+    <div class="admin-ep-block" style="border-color:#ff5c5c;">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">
+        Возвращает все ${SEED_ACCOUNTS.length} логинов/паролей в исходное состояние — как будто никто ещё ни разу не заходил: без имени, без фото, без баллов. Банк обнуляется. Статусы всех Эпизодов и Событий сбрасываются на «Закрыта».<br><br>
+        <b>Логины и пароли остаются теми же</b> — можно будет заходить теми же данными заново. Метки для Охоты и пароль администратора <b>не трогаются</b>.<br><br>
+        Используй это только перед настоящим стартом сезона, когда закончили тестировать.
+      </div>
+      <button class="small-btn danger" id="full-season-reset-btn">Сбросить весь сезон</button>
+    </div>
+  `;
   box.innerHTML = html;
   box.classList.toggle('admin-light', !!state.adminLight);
 
@@ -2277,6 +2437,10 @@ async function renderAdmin(){
     }
   });
 
+  box.querySelectorAll('[data-open-ep]').forEach(btn=> btn.addEventListener('click', ()=>{
+    showView('episodes');
+    setTimeout(()=> openEpisode(parseInt(btn.dataset.openEp,10)), 150);
+  }));
   box.querySelectorAll('.ep-status-select').forEach(sel=>{
     sel.addEventListener('change', async ()=>{
       const id = sel.dataset.ep;
@@ -2285,11 +2449,16 @@ async function renderAdmin(){
       eps[id].status = sel.value;
       await sSet('episodes', eps);
       const meta = getEpisodeMeta(id);
-      await pushEvent(`Статус главы «${meta.name}» изменён на «${sel.options[sel.selectedIndex].text}»`);
+      await pushEvent(`Статус эпизода «${meta.name}» изменён на «${sel.options[sel.selectedIndex].text}»`);
       state.episodes = eps;
       renderHeader();
+      renderAdmin();
     });
   });
+  box.querySelectorAll('[data-quick-start-ep]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    await startEpisodeGame(parseInt(btn.dataset.quickStartEp,10));
+    renderAdmin();
+  }));
 
   box.querySelectorAll('.ep-save-btn').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
@@ -2330,6 +2499,8 @@ async function renderAdmin(){
   });
   renderAdminEventsList();
   initMarkersAdmin();
+  renderTasksList(SOCIAL_TASKS, 'social-tasks-list', '🎭');
+  renderTasksList(CREATIVE_TASKS, 'creative-tasks-list', '🛠');
 
   document.getElementById('full-season-reset-btn').addEventListener('click', async ()=>{
     if(!confirm('Точно сбросить весь сезон? Все имена, фото и баллы всех игроков исчезнут. Логины и пароли останутся прежними.')) return;
@@ -2414,6 +2585,23 @@ async function renderAdminEventsList(){
 let markersAdminMap = null;
 let markersAdminMarkerLayer = null;
 let markerPhotoData = null;
+function renderTasksList(taskArray, elId, icon){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.innerHTML = taskArray.map((task,i)=> `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06); font-size:13px;">
+      <div style="flex:1;">${escapeHtml(task)}</div>
+      <button class="small-btn" data-publish-task="${i}" style="flex-shrink:0;">+</button>
+    </div>`).join('');
+  el.querySelectorAll('[data-publish-task]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const task = taskArray[parseInt(btn.dataset.publishTask,10)];
+    const events = await sGet('custom_events', []);
+    events.push({ id: 'task'+Date.now(), title: `${icon} Задание`, description: task, status: 'open', leader: null, countdownEnd: null });
+    await sSet('custom_events', events);
+    await pushEvent(`Опубликовано новое задание: ${task}`);
+    btn.textContent = '✓'; btn.disabled = true;
+    setTimeout(()=> renderAdminEventsList(), 300);
+  }));
+}
 async function initMarkersAdmin(){
   const holder = document.getElementById('admin-markers-map');
   if(!holder || typeof L === 'undefined') return;
@@ -2435,6 +2623,19 @@ async function initMarkersAdmin(){
   }
   setTimeout(()=> markersAdminMap.invalidateSize(), 150);
 
+  document.getElementById('marker-add-no-map-btn').onclick = ()=>{
+    document.getElementById('marker-form').style.display = 'block';
+    document.getElementById('marker-coords-line').innerHTML = '📍 Без точных координат — только описание';
+    delete document.getElementById('marker-form').dataset.lat;
+    delete document.getElementById('marker-form').dataset.lng;
+    document.getElementById('marker-desc').value = '';
+    document.getElementById('marker-video').value = '';
+    markerPhotoData = null;
+    document.getElementById('marker-photo-preview').style.display = 'none';
+    document.getElementById('marker-photo-placeholder').style.display = 'block';
+    document.getElementById('marker-desc').focus();
+  };
+
   document.getElementById('marker-photo-input').onchange = (e)=>{
     const file = e.target.files[0]; if(!file) return;
     const reader = new FileReader();
@@ -2454,11 +2655,13 @@ async function initMarkersAdmin(){
     const desc = document.getElementById('marker-desc').value.trim();
     const video = document.getElementById('marker-video').value.trim();
     if(!desc){ alert('Напиши короткое описание метки.'); return; }
+    const hasCoords = form.dataset.lat !== undefined && form.dataset.lng !== undefined;
     const markers = await sGet('markers_ep2', []);
     const num = markers.length + 1;
     markers.push({
       id: 'm'+Date.now(), number: num,
-      lat: parseFloat(form.dataset.lat), lng: parseFloat(form.dataset.lng),
+      lat: hasCoords ? parseFloat(form.dataset.lat) : null,
+      lng: hasCoords ? parseFloat(form.dataset.lng) : null,
       description: desc, photo: markerPhotoData, video: video || null
     });
     const ok = await sSet('markers_ep2', markers);
@@ -2479,6 +2682,7 @@ async function renderMarkersMapPoints(){
   const markers = await sGet('markers_ep2', []);
   markersAdminMarkerLayer.clearLayers();
   markers.forEach(m=>{
+    if(m.lat === null || m.lng === null || m.lat === undefined || m.lng === undefined) return; // метка без карты — только в списке ниже
     const photoHtml = m.photo ? `<br><img src="${m.photo}" style="width:100px; border-radius:4px; margin-top:4px;">` : '';
     const videoHtml = m.video ? `<br><a href="${escapeHtml(m.video)}" target="_blank" rel="noopener">▶ Смотреть видео</a>` : '';
     L.marker([m.lat, m.lng]).addTo(markersAdminMarkerLayer).bindPopup(`<b>Метка №${m.number}</b><br>${escapeHtml(m.description)}${photoHtml}${videoHtml}`);
@@ -2489,7 +2693,7 @@ async function renderAdminMarkersList(){
   if(!el) return;
   const markers = await sGet('markers_ep2', []);
   el.innerHTML = markers.length ? markers.map(m=> `<div class="admin-ep-row">
-      <div>${m.photo ? `<img src="${m.photo}" style="width:36px; height:36px; border-radius:4px; object-fit:cover; vertical-align:middle; margin-right:8px;">` : ''}Метка №${m.number} — ${escapeHtml(m.description)}${m.video ? ' 🎬' : ''}</div>
+      <div>${m.photo ? `<img src="${m.photo}" style="width:36px; height:36px; border-radius:4px; object-fit:cover; vertical-align:middle; margin-right:8px;">` : ''}Метка №${m.number} — ${escapeHtml(m.description)}${m.video ? ' 🎬' : ''}${(m.lat===null||m.lat===undefined) ? ' <span style="color:var(--ash); font-size:11px;">(без карты)</span>' : ''}</div>
       <button class="small-btn danger" data-del-marker="${m.id}">Удалить</button>
     </div>`).join('') : '<div class="empty-state">Меток пока нет — кликни по карте выше</div>';
   el.querySelectorAll('[data-del-marker]').forEach(btn=> btn.addEventListener('click', async ()=>{
@@ -2501,10 +2705,12 @@ async function renderAdminMarkersList(){
   }));
 }
 function renderTeamsResult(teams){
-  const el = document.getElementById('teams-result');
-  if(!el) return;
   const nameOf = id=> state.profiles.find(p=>p.id===id)?.name || '?';
-  el.innerHTML = `<b style="color:var(--ember-bright);">Команда A:</b> ${teams.A.map(nameOf).map(escapeHtml).join(', ') || '—'}<br><b style="color:var(--ember-bright);">Команда B:</b> ${teams.B.map(nameOf).map(escapeHtml).join(', ') || '—'}`;
+  const html = `<b style="color:var(--ember-bright);">Команда A:</b> ${teams.A.map(nameOf).map(escapeHtml).join(', ') || '—'}<br><b style="color:var(--ember-bright);">Команда B:</b> ${teams.B.map(nameOf).map(escapeHtml).join(', ') || '—'}`;
+  ['teams-result','episode-teams-result'].forEach(elId=>{
+    const el = document.getElementById(elId);
+    if(el) el.innerHTML = html;
+  });
 }
 function renderAdminPlayersList(){
   const el = document.getElementById('admin-players-list');
