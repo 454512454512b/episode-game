@@ -222,6 +222,19 @@ nav button{
 }
 nav button:hover{ color:var(--ember-bright); border-bottom-color:var(--ember-bright); text-shadow:0 0 12px rgba(245,180,100,.4);}
 nav button.active{ color:var(--ember-bright); border-bottom-color:var(--ember); text-shadow:0 0 10px rgba(245,180,100,.3);}
+nav button, .drawer-nav button{ position:relative; }
+.unread-badge{
+  position:absolute; top:2px; right:2px; min-width:16px; height:16px; padding:0 4px;
+  background:#e0393e; color:#fff; border-radius:9px; font-family:'JetBrains Mono',monospace;
+  font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center;
+  line-height:1; box-shadow:0 0 6px rgba(224,57,62,.6); pointer-events:none;
+}
+.drawer-nav button .unread-badge{ position:static; margin-left:auto; }
+.card-unread-badge{
+  background:#e0393e; color:#fff; border-radius:9px; font-family:'JetBrains Mono',monospace;
+  font-size:11px; font-weight:700; padding:2px 7px; margin-left:8px; display:inline-flex;
+  align-items:center; justify-content:center; box-shadow:0 0 6px rgba(224,57,62,.5);
+}
 main{ max-width:920px; margin:0 auto; padding:30px 20px 80px;}
 
 .header-bank-badge{
@@ -660,11 +673,12 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     <nav id="main-nav" style="flex:1; justify-content:center;">
       <button data-view="home" class="active">Главная</button>
       <button data-view="players">Игроки</button>
-      <button data-view="episodes">Эпизоды</button>
-      <button data-view="events">События</button>
+      <button data-view="episodes">Эпизоды<span class="unread-badge" id="badge-nav-episodes" style="display:none;"></span></button>
+      <button data-view="events">События<span class="unread-badge" id="badge-nav-events" style="display:none;"></span></button>
       <button data-view="profile">Профиль</button>
     </nav>
     <div id="header-bank-badge" class="header-bank-badge" title="Общий банк сезона">💰 —</div>
+    <button id="sound-toggle-btn" class="small-btn" title="Звук">🔊</button>
     <div id="header-avatar" class="header-avatar" title="Профиль">?</div>
     <button id="logout-btn" class="small-btn" title="Выйти из аккаунта">Выйти</button>
   </header>
@@ -679,8 +693,8 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
     <div class="drawer-nav">
       <button data-view="home"><span class="ic">🏠</span> Главная</button>
       <button data-view="players"><span class="ic">👥</span> Игроки</button>
-      <button data-view="episodes"><span class="ic">📖</span> Эпизоды</button>
-      <button data-view="events"><span class="ic">🎲</span> События</button>
+      <button data-view="episodes"><span class="ic">📖</span> Эпизоды<span class="unread-badge" id="badge-drawer-episodes" style="display:none;"></span></button>
+      <button data-view="events"><span class="ic">🎲</span> События<span class="unread-badge" id="badge-drawer-events" style="display:none;"></span></button>
       <div class="drawer-divider"></div>
       <button data-view="profile"><span class="ic">👤</span> Профиль</button>
       <button id="drawer-logout-btn"><span class="ic">🚪</span> Выйти из аккаунта</button>
@@ -879,20 +893,22 @@ const CREATIVE_TASKS = [
 
 const EPISODES = [
   {id:1, name:"Городские Салки", icon:"🏃", rules:"Один водящий стартует и должен найти и осалить любого участника по городу в заданных границах. Осалённый сам становится водящим. Нельзя прятаться в закрытых помещениях дольше 5 минут. Побеждает тот, кого ни разу не осалили, или тот, кто был водящим меньше всего.",
-    showTagger:true,
+    showTagger:true, needsGeoShare:true,
     actions:[ {key:'tag', label:'Я осалил', needsTarget:true, announce:(a,t)=> `⚡ ${a} осалил ${t} — теперь ${t} водящий!`} ]
   },
   {id:2, name:"Охота за метками", icon:"🎯", rules:"По городу спрятаны 10-15 меток. Подсказки публикуются в чат постепенно. Каждая найденная метка — баллы, фотоподтверждение обязательно. Побеждает нашедший больше всех к концу времени.",
+    needsGeoShare:false, showMarkersMap:true,
     actions:[ {key:'found', label:'Я нашёл метку', needsTarget:false, announce:(a)=> `🎯 ${a} нашёл метку!`} ]
   },
-  {id:3, name:"Тайный агент", icon:"🎭", rules:"Каждому тайно назначается цель. «Устранение» — личная встреча с кодовой фразой/предметом и подтверждением. После устранения цели ты получаешь её цель. Победитель — выживший дольше всех или устранивший больше всех."},
+  {id:3, name:"Тайный агент", icon:"🎭", needsGeoShare:false, rules:"Каждому тайно назначается цель. «Устранение» — личная встреча с кодовой фразой/предметом и подтверждением. После устранения цели ты получаешь её цель. Победитель — выживший дольше всех или устранивший больше всех."},
   {id:4, name:"Ночной дозор", icon:"🚩", rules:"Командный захват флага в парке/лесу. Пойманного на чужой территории отправляют в плен, освободить может свой игрок. Побеждает команда, забравшая флаг или набравшая больше очков за раунды.",
+    needsGeoShare:true,
     actions:[
       {key:'capture', label:'Взял в плен', needsTarget:true, announce:(a,t)=> `🚩 ${a} взял в плен ${t}!`},
       {key:'free', label:'Освободил', needsTarget:true, announce:(a,t)=> `🚩 ${a} освободил ${t} из плена!`}
     ]
   },
-  {id:5, name:"Контрабанда", icon:"📦", rules:"Одна команда — перевозчики с грузом, идут по городу от точки к точке. Вторая — патрули, пытаются перехватить груз. Груз можно передавать между перевозчиками. Побеждает либо доставившая груз команда, либо перехватившие патрули.",
+  {id:5, name:"Контрабанда", icon:"📦", needsGeoShare:false, rules:"Одна команда — перевозчики с грузом, идут по городу от точки к точке. Вторая — патрули, пытаются перехватить груз. Груз можно передавать между перевозчиками. Побеждает либо доставившая груз команда, либо перехватившие патрули.",
     actions:[
       {key:'pass', label:'Передал груз', needsTarget:true, announce:(a,t)=> `📦 ${a} передал груз игроку ${t}!`},
       {key:'intercept', label:'Перехватил груз', needsTarget:true, announce:(a,t)=> `📦 ${a} перехватил груз у ${t}!`}
@@ -907,10 +923,10 @@ function getEpisodeMeta(id){
   const base = EPISODES.find(e=> e.id === Number(id));
   if(base){
     const over = state.episodeOverrides[id] || {};
-    return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules, actions: base.actions || null, showTagger: !!base.showTagger, photo: over.photo || null, custom:false };
+    return { id: base.id, icon: base.icon, name: over.name || base.name, rules: over.rules || base.rules, actions: base.actions || null, showTagger: !!base.showTagger, photo: over.photo || null, custom:false, needsGeoShare: base.needsGeoShare !== false, showMarkersMap: !!base.showMarkersMap };
   }
   const custom = (state.customEpisodes||[]).find(e=> e.id === id);
-  if(custom) return { id: custom.id, icon: '📌', name: custom.name, rules: custom.rules, actions: null, showTagger: false, photo: custom.photo || null, custom:true };
+  if(custom) return { id: custom.id, icon: '📌', name: custom.name, rules: custom.rules, actions: null, showTagger: false, photo: custom.photo || null, custom:true, needsGeoShare:true, showMarkersMap:false };
   return null;
 }
 /* Полный список ID эпизодов для отрисовки — 5 фиксированных + все добавленные организатором */
@@ -1354,6 +1370,59 @@ async function applyPoints(playerId, delta, reason){
   return p;
 }
 
+/* ============ ЗВУК — синтезируется прямо в браузере через Web Audio API, никаких аудиофайлов не нужно ============ */
+let audioCtx = null;
+function getAudioCtx(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function soundsEnabled(){ return localStorage.getItem('episode_sound') !== 'off'; }
+function playTone(freq, duration, type='sine', volume=0.15, delay=0){
+  if(!soundsEnabled()) return;
+  try{
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0, ctx.currentTime+delay);
+    gain.gain.linearRampToValueAtTime(volume, ctx.currentTime+delay+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+delay+duration);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(ctx.currentTime+delay); osc.stop(ctx.currentTime+delay+duration+0.05);
+  } catch(e){}
+}
+function playPointsGainSound(){ playTone(660,0.16,'sine',0.14); playTone(880,0.2,'sine',0.12,0.09); }
+function playPointsLossSound(){ playTone(240,0.28,'sawtooth',0.09); }
+function playRevealSting(){ playTone(140,0.4,'sawtooth',0.11); playTone(210,0.4,'sawtooth',0.09,0.05); playTone(90,0.6,'sine',0.14,0.1); }
+function playFinaleSting(){ [130,164.8,196,261.6,329.6,392].forEach((f,i)=> playTone(f,1.4,'triangle',0.09,i*0.11)); }
+function playCoinSound(){ playTone(1400,0.08,'square',0.05); playTone(1800,0.06,'square',0.04,0.04); }
+
+/* Тихий фоновый эмбиент — три низких приглушённых тона, включается/выключается вручную, не мешает */
+let ambientNodes = null;
+function toggleAmbient(){
+  if(ambientNodes){ stopAmbient(); localStorage.setItem('episode_ambient','off'); return false; }
+  const ctx = getAudioCtx();
+  const master = ctx.createGain(); master.gain.value = 0; master.connect(ctx.destination);
+  master.gain.linearRampToValueAtTime(0.035, ctx.currentTime+1.5);
+  const oscs = [55, 82.4, 110].map(f=>{
+    const o = ctx.createOscillator(); o.type='sine'; o.frequency.value = f;
+    const g = ctx.createGain(); g.gain.value = 0.34;
+    o.connect(g); g.connect(master); o.start(); return o;
+  });
+  ambientNodes = { master, oscs };
+  localStorage.setItem('episode_ambient','on');
+  return true;
+}
+function stopAmbient(){
+  if(!ambientNodes) return;
+  const ctx = getAudioCtx();
+  ambientNodes.master.gain.linearRampToValueAtTime(0, ctx.currentTime+0.8);
+  const toStop = ambientNodes.oscs;
+  setTimeout(()=> toStop.forEach(o=>{ try{o.stop();}catch(e){} }), 900);
+  ambientNodes = null;
+}
+
 function showPointsToast(name, delta, reason){
   const layer = document.getElementById('toast-layer');
   if(!layer) return;
@@ -1365,6 +1434,7 @@ function showPointsToast(name, delta, reason){
   layer.appendChild(el);
   setTimeout(()=> el.remove(), 4200);
   playPointsBurst(delta >= 0);
+  if(delta >= 0) playPointsGainSound(); else playPointsLossSound();
 }
 
 /* Частицы вылетают одновременно с левого и правого края экрана — короткий, но заметный акцент к каждому начислению баллов */
@@ -1408,12 +1478,12 @@ function showMessageToast(title, body){
 }
 
 /* Дождь из купюр на весь экран — играется примерно 18 секунд, когда банк обновляется */
-function playMoneyRain(){
+function playMoneyRain(durationMs){
   const layer = document.getElementById('money-rain-layer');
   if(!layer) return;
   layer.style.display = 'block';
   layer.innerHTML = '';
-  const DURATION_MS = 5000;
+  const DURATION_MS = durationMs || 5000;
   const spawnInterval = setInterval(()=>{
     const roll = Math.random();
     const piece = document.createElement('div');
@@ -1421,6 +1491,7 @@ function playMoneyRain(){
     if(roll < 0.35){
       /* монета */
       piece.className = 'coin-piece';
+      if(Math.random() < 0.35) playCoinSound();
     } else if(roll < 0.8 || !MONEY_PORTRAIT_DATA_URL){
       /* обычная быстрая купюра с надписью EPISODE */
       piece.className = 'bill-piece';
@@ -1476,6 +1547,8 @@ function startBackgroundPollers(){
     renderGlobalTaggerBanner();
     if(document.getElementById('view-home').classList.contains('active')) renderHeader();
     await checkHourlyAwards();
+    await checkPendingStarts();
+    await updateUnreadBadges();
   }, 15000);
   setInterval(tickGlobalCountdownDisplay, 1000);
   setInterval(fetchActiveCountdown, 5000);
@@ -1586,6 +1659,25 @@ function updateDrawerUserCard(){
 }
 document.getElementById('header-avatar').addEventListener('click', ()=> showView('profile'));
 
+document.getElementById('sound-toggle-btn').addEventListener('click', ()=>{
+  const btn = document.getElementById('sound-toggle-btn');
+  const isOff = localStorage.getItem('episode_sound') === 'off';
+  if(isOff){
+    localStorage.removeItem('episode_sound');
+    btn.textContent = '🔊';
+    playTone(660,0.15,'sine',0.15); // короткий звук-подтверждение
+    if(!ambientNodes) toggleAmbient();
+  } else {
+    localStorage.setItem('episode_sound','off');
+    stopAmbient();
+    btn.textContent = '🔇';
+  }
+});
+(function initSoundBtn(){
+  const btn = document.getElementById('sound-toggle-btn');
+  if(btn) btn.textContent = soundsEnabled() ? '🔊' : '🔇';
+})();
+
 async function updateHeaderBank(){
   const amount = await sGet('prize_pool', 0);
   const text = `💰 ${Number(amount).toLocaleString('ru-RU')} ₽`;
@@ -1636,6 +1728,63 @@ async function refreshAll(){
   updateHeaderBank();
   if(__lastKnownPrizePool === null) __lastKnownPrizePool = await sGet('prize_pool', 0);
   await checkHourlyAwards();
+  await checkPendingStarts();
+  await updateUnreadBadges();
+}
+
+/* ============ НЕПРОЧИТАННЫЕ СООБЩЕНИЯ (как в Telegram/WhatsApp) ============
+   "Прочитано" хранится локально на устройстве (localStorage) — это личное, у каждого своё,
+   как и должно быть с непрочитанными. Считается по времени последнего сообщения в чате
+   конкретного эпизода/события против времени, когда его открывали в последний раз. */
+function getLastSeen(key){ return parseInt(localStorage.getItem('episode_seen_'+key) || '0', 10); }
+function markChatSeen(key){ localStorage.setItem('episode_seen_'+key, String(Date.now())); }
+async function countUnreadIn(chatKey){
+  const chat = await sGet(chatKey, []);
+  const lastSeen = getLastSeen(chatKey);
+  return chat.filter(m => m.ts > lastSeen).length;
+}
+async function computeEpisodeUnreadMap(){
+  const map = {};
+  for(const epId of allEpisodeIds()){
+    const st = state.episodes[epId]?.status;
+    if(st !== 'active') continue; // считаем только у активных — у закрытых читать нечего нового
+    map[epId] = await countUnreadIn('chat_ep'+epId);
+  }
+  return map;
+}
+async function computeEventUnreadMap(){
+  const events = await sGet('custom_events', []);
+  const map = {};
+  for(const e of events){
+    if(e.status !== 'open') continue;
+    map[e.id] = await countUnreadIn('chat_ev'+e.id);
+  }
+  return map;
+}
+function setBadge(elId, count){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  if(count > 0){ el.textContent = count > 99 ? '99+' : String(count); el.style.display = 'flex'; }
+  else { el.style.display = 'none'; }
+}
+async function updateUnreadBadges(){
+  try{
+    const epMap = await computeEpisodeUnreadMap();
+    const epTotal = Object.values(epMap).reduce((a,b)=>a+b,0);
+    setBadge('badge-nav-episodes', epTotal);
+    setBadge('badge-drawer-episodes', epTotal);
+
+    const evMap = await computeEventUnreadMap();
+    const evTotal = Object.values(evMap).reduce((a,b)=>a+b,0);
+    setBadge('badge-nav-events', evTotal);
+    setBadge('badge-drawer-events', evTotal);
+
+    state.episodeUnreadMap = epMap;
+    state.eventUnreadMap = evMap;
+    // если списки эпизодов/событий сейчас на экране — перерисуем, чтобы бейджи на карточках тоже обновились
+    if(document.getElementById('view-episodes')?.classList.contains('active')) renderEpisodes();
+    if(document.getElementById('view-events')?.classList.contains('active')) renderEventsList();
+  } catch(e){ /* не критично, если не получилось посчитать — просто нет бейджей в этот раз */ }
 }
 
 let __countdownIntervalId = null;
@@ -1690,8 +1839,10 @@ function playCountdownReveal(seconds, revealName){
     let n = seconds;
     function tick(){
       layer.innerHTML = `<div class="cr-number">${n}</div>`;
+      playTone(n>0 ? 440 : 660, n>0?0.12:0.3, 'sine', 0.12);
       if(n <= 0){
         layer.innerHTML = `<div class="cr-reveal-sub">Водящим становится</div><div class="cr-reveal-name">${escapeHtml(revealName)}</div>`;
+        playRevealSting();
         setTimeout(()=>{ layer.style.display = 'none'; resolve(); }, 2200);
         return;
       }
@@ -1702,6 +1853,42 @@ function playCountdownReveal(seconds, revealName){
   });
 }
 
+/* Большая финальная анимация сезона: долгий отсчёт → раскрытие победителя крупным профилем →
+   объявление, что банк передан ему → длинный дождь из купюр → объявление в чат/Telegram/push. */
+async function playSeasonFinale(winner){
+  const layer = document.getElementById('countdown-reveal-layer');
+  layer.style.display = 'flex';
+  let n = 10;
+  await new Promise(resolve=>{
+    function tick(){
+      layer.innerHTML = `<div class="cr-reveal-sub">Сезон завершается</div><div class="cr-number">${n}</div>`;
+      playTone(n>0 ? 330+ n*8 : 660, n>0?0.14:0.35, 'sine', 0.13);
+      if(n <= 0){ resolve(); return; }
+      n--;
+      setTimeout(tick, 700);
+    }
+    tick();
+  });
+
+  const bank = await sGet('prize_pool', 0);
+  const avatarHtml = winner.photo
+    ? `<img src="${winner.photo}" style="width:min(46vw,180px); height:min(46vw,180px); border-radius:50%; object-fit:cover; border:4px solid var(--ember-bright); box-shadow:0 0 60px rgba(245,180,100,.6); margin-bottom:20px;">`
+    : `<div style="width:min(46vw,180px); height:min(46vw,180px); border-radius:50%; background:rgba(201,124,44,.2); border:4px solid var(--ember-bright); display:flex; align-items:center; justify-content:center; font-family:'Cinzel',serif; font-size:60px; color:var(--ember-bright); margin:0 auto 20px;">${escapeHtml(winner.name[0]||'?')}</div>`;
+  layer.innerHTML = `
+    <div class="cr-reveal-sub">Победитель сезона</div>
+    ${avatarHtml}
+    <div class="cr-reveal-name">${escapeHtml(winner.name)}</div>
+    <div class="mono" style="color:var(--ember-bright); font-size:16px; margin-top:14px;">забирает банк: ${bank.toLocaleString('ru-RU')} ₽</div>
+  `;
+  playFinaleSting();
+  playMoneyRain(10000); // увеличенный, долгий дождь из купюр именно для финала
+
+  await pushEvent(`🏆 Сезон завершён! Победитель — ${winner.name}, забирает банк ${bank.toLocaleString('ru-RU')} ₽`);
+  sendPushToAll('EPISODE', `🏆 Сезон завершён!\nПобедитель: ${winner.name}\nБанк: ${bank.toLocaleString('ru-RU')} ₽`);
+
+  setTimeout(()=>{ layer.style.display = 'none'; }, 12000);
+}
+
 /* Запуск игры — общая логика, вызывается и из Админки напрямую, и из кнопки внутри самой главы.
    Помимо рандомайзера водящего и таймера, ставит метку startedAt/lastHourlyAward для автоматического
    почасового начисления баллов (см. checkHourlyAwards). */
@@ -1709,11 +1896,6 @@ async function startEpisodeGame(id){
   const base = getEpisodeMeta(id);
   const pool = state.profiles.filter(p=>p.displayNameSet);
   if(base.showTagger && pool.length < 2){ alert('Нужно минимум 2 зашедших игрока, чтобы начать.'); return; }
-
-  const hh = parseInt(prompt('Часы до конца игры? (0, если не нужно)', '0'), 10) || 0;
-  const mm = parseInt(prompt('Минуты? (0, если не нужно)', '30'), 10) || 0;
-  const ss = parseInt(prompt('Секунды? (0, если не нужно)', '0'), 10) || 0;
-  const totalMs = (hh*3600 + mm*60 + ss) * 1000;
 
   let chosen = null;
   if(base.showTagger){
@@ -1723,8 +1905,10 @@ async function startEpisodeGame(id){
 
   const eps = await sGet('episodes', {});
   eps[id] = eps[id] || {};
+  eps[id].status = 'active';
   eps[id].started = true;
-  eps[id].endsAt = totalMs > 0 ? (Date.now() + totalMs) : null;
+  eps[id].endsAt = null;
+  eps[id].pendingStart = null;
   eps[id].startedAt = Date.now();
   eps[id].lastHourlyAward = Date.now();
   if(chosen) eps[id].tagger = chosen.id;
@@ -1732,12 +1916,56 @@ async function startEpisodeGame(id){
   await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
   state.episodes = eps;
   const link = deepLink('episode', id);
-  const pad = n=> String(n).padStart(2,'0');
-  const durTxt = totalMs>0 ? ` (на ${pad(hh)}:${pad(mm)}:${pad(ss)})` : '';
-  const msg = chosen ? `🎲 Игра началась! Первым водит: ${chosen.name}${durTxt}` : `🎲 Эпизод «${base.name}» начался!${durTxt}`;
+  const msg = chosen ? `🎲 Игра началась! Первым водит: ${chosen.name}` : `🎲 Эпизод «${base.name}» начался!`;
   await pushEvent(msg);
   sendPushToAll('EPISODE', `${msg}\n${link}`);
   if(document.getElementById('view-episodes').classList.contains('active')) openEpisode(id);
+}
+
+/* Завершить игру в любой момент, независимо от текущего статуса */
+async function endEpisodeGame(id){
+  if(!confirm('Завершить этот эпизод сейчас?')) return;
+  const base = getEpisodeMeta(id);
+  const eps = await sGet('episodes', {});
+  eps[id] = eps[id] || {};
+  eps[id].status = 'done';
+  await sSet('episodes', eps);
+  state.episodes = eps;
+  await pushEvent(`🏁 Эпизод «${base.name}» завершён организатором`);
+  renderAdmin();
+}
+
+/* Запустить обратный отсчёт ДО старта игры — когда время выйдет, игра запустится сама,
+   без повторного нажатия кнопок (см. checkPendingStarts, вызывается вместе с почасовым начислением). */
+async function schedulePendingStart(id){
+  const mm = parseInt(prompt('Через сколько минут запустить игру автоматически?', '10'), 10);
+  if(!mm || mm <= 0) return;
+  const base = getEpisodeMeta(id);
+  const eps = await sGet('episodes', {});
+  eps[id] = eps[id] || {};
+  eps[id].status = 'active';
+  eps[id].pendingStart = { readyAt: Date.now() + mm*60000 };
+  await sSet('episodes', eps);
+  state.episodes = eps;
+  const link = deepLink('episode', id);
+  const msg = `⏳ Обратный отсчёт до «${base.name}» запущен — старт через ${mm} мин.`;
+  await pushEvent(msg);
+  sendPushToAll('EPISODE', `${msg}\n${link}`);
+  renderAdmin();
+}
+/* Проверяет, не истёк ли у кого-то отложенный старт — если да, запускает игру автоматически,
+   без чьего-либо клика. "Догоняющая" модель — как и почасовое начисление: срабатывает у того,
+   кто первым откроет сайт после истечения времени. */
+async function checkPendingStarts(){
+  const eps = await sGet('episodes', {});
+  for(const base of EPISODES){
+    const data = eps[base.id];
+    if(!data || !data.pendingStart || data.started) continue;
+    if(Date.now() >= data.pendingStart.readyAt){
+      await startEpisodeGame(base.id);
+      return; // одна автозапущенная игра за раз, дальше — на следующем цикле проверки
+    }
+  }
 }
 
 /* ============ АВТОМАТИЧЕСКОЕ ПОЧАСОВОЕ НАЧИСЛЕНИЕ (для глав с водящим) ============
@@ -1842,13 +2070,16 @@ document.getElementById('modal-bg').addEventListener('click', (e)=>{ if(e.target
 /* ============ EPISODES ============ */
 function renderEpisodes(){
   const list = document.getElementById('episodes-list');
+  const unreadMap = state.episodeUnreadMap || {};
   list.innerHTML = allEpisodeIds().map((epId,i)=>{
     const ep = getEpisodeMeta(epId);
     if(!ep) return '';
     const st = state.episodes[ep.id]?.status || 'locked';
     const label = {locked:'Закрыт', rules:'Правила открыты', active:'Идёт сейчас', done:'Завершена'}[st];
     const iconHtml = ep.photo ? `<img src="${ep.photo}" style="width:34px; height:34px; border-radius:4px; object-fit:cover;">` : `<span class="ep-icon">${ep.icon}</span>`;
-    return `<div class="ep-card" style="animation-delay:${i*0.04}s" data-id="${ep.id}"><div style="display:flex; align-items:center; gap:14px;">${iconHtml}<div class="epname">${ep.custom ? escapeHtml(ep.name) : `${CHAPTER_WORD} ${ep.id}: ${escapeHtml(ep.name)}`}</div></div><div class="status-badge status-${st}">${label}</div></div>`;
+    const unread = unreadMap[ep.id] || 0;
+    const unreadHtml = unread > 0 ? `<span class="card-unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
+    return `<div class="ep-card" style="animation-delay:${i*0.04}s" data-id="${ep.id}"><div style="display:flex; align-items:center; gap:14px;">${iconHtml}<div class="epname">${ep.custom ? escapeHtml(ep.name) : `${CHAPTER_WORD} ${ep.id}: ${escapeHtml(ep.name)}`}</div>${unreadHtml}</div><div class="status-badge status-${st}">${label}</div></div>`;
   }).join('');
   list.querySelectorAll('.ep-card').forEach(c=> c.addEventListener('click', ()=>{
     const st = state.episodes[c.dataset.id]?.status || 'locked';
@@ -1913,13 +2144,21 @@ async function openEpisode(id){
         <div id="episode-teams-result" style="margin-top:10px; font-family:'JetBrains Mono',monospace; font-size:13px;"></div>
       </div>` : '';
 
+    const geoBlockHtml = ep.needsGeoShare ? `
+      <button class="action-btn" id="share-geo-btn">Поделиться геолокацией</button>
+      <div id="geo-map-${id}" style="height:260px; border-radius:2px; margin-top:10px; display:none;"></div>
+      <div class="geo-list" id="geo-list"></div>` : '';
+    const markersMapHtml = ep.showMarkersMap ? `
+      <h3 style="margin-top:10px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Карта меток</h3>
+      <div style="font-size:12px; color:var(--ash); margin-bottom:8px;">Метки не пропадают — расставлены заранее организатором, ищите их по подсказкам в чате.</div>
+      <div id="player-markers-map-${id}" style="height:280px; border-radius:2px;"></div>` : '';
+
     html += `<div class="live-block"><div class="live-tag">● В ЭФИРЕ</div>
       ${taggerBlock}
       ${(ep.actions && !ep.showTagger && data.started) ? actionsHtml : ''}
       ${teamsBlockHtml}
-      <button class="action-btn" id="share-geo-btn">Поделиться геолокацией</button>
-      <div id="geo-map-${id}" style="height:260px; border-radius:2px; margin-top:10px; display:none;"></div>
-      <div class="geo-list" id="geo-list"></div>
+      ${geoBlockHtml}
+      ${markersMapHtml}
       <h3 style="margin-top:20px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Чат эпизода</h3>
       <div class="chat-log" id="chat-log"></div>
       <div class="chat-row"><input class="paper-input" id="chat-input" placeholder="Написать в чат..."><button id="chat-send">Отправить</button></div>
@@ -1950,7 +2189,8 @@ async function openEpisode(id){
     const startBtn = document.getElementById('start-tagger-btn');
     if(startBtn) startBtn.addEventListener('click', async ()=> startEpisodeGame(id));
 
-    document.getElementById('share-geo-btn').addEventListener('click', ()=>{
+    const geoBtn = document.getElementById('share-geo-btn');
+    if(geoBtn) geoBtn.addEventListener('click', ()=>{
       if(!navigator.geolocation){ alert('Геолокация недоступна в этом браузере'); return; }
       navigator.geolocation.getCurrentPosition(async (pos)=>{
         const geo = await sGet('geo_ep'+id, {});
@@ -1959,7 +2199,8 @@ async function openEpisode(id){
         renderGeoList(id);
       }, ()=> alert('Не удалось получить геолокацию — проверь, что разрешил доступ в браузере'));
     });
-    renderGeoList(id);
+    if(ep.needsGeoShare) renderGeoList(id);
+    if(ep.showMarkersMap) renderPlayerMarkersMap(id);
     loadChat(id);
     document.getElementById('chat-send').addEventListener('click', ()=> sendChat(id));
     document.getElementById('chat-input').addEventListener('keydown', (e)=>{ if(e.key==='Enter') sendChat(id); });
@@ -2039,6 +2280,8 @@ async function loadChat(id){
   if(!log) return;
   log.innerHTML = chat.map(m=> `<div class="chat-msg"><b>${escapeHtml(m.player)}:</b> ${escapeHtml(m.text)}</div>`).join('') || '<div class="empty-state" style="padding:6px 0;">Тишина...</div>';
   log.scrollTop = log.scrollHeight;
+  markChatSeen('chat_ep'+id);
+  updateUnreadBadges();
 }
 async function sendChat(id){
   const input = document.getElementById('chat-input');
@@ -2060,12 +2303,15 @@ const HONEST_PLAY_RULES = "Честная игра: как только тебя
 async function renderEventsList(){
   const list = document.getElementById('events-list');
   const events = await sGet('custom_events', []);
+  const unreadMap = state.eventUnreadMap || {};
   const visible = state.isAdmin ? events : events.filter(e=> e.status==='open');
   list.innerHTML = visible.length ? visible.map((e,i)=>{
     const closed = e.status !== 'open';
     const isLive = !closed && e.leader; // событие реально в разгаре — уже есть ведущий
+    const unread = unreadMap[e.id] || 0;
+    const unreadHtml = unread > 0 ? `<span class="card-unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
     return `<div class="event-card ${closed?'closed':''} ${isLive?'event-live':''}" style="animation-delay:${i*0.05}s" data-id="${e.id}">
-      <div><div class="evname">${escapeHtml(e.title)}</div><div class="evdesc">${escapeHtml(e.description||'')}</div></div>
+      <div><div class="evname">${escapeHtml(e.title)}${unreadHtml}</div><div class="evdesc">${escapeHtml(e.description||'')}</div></div>
       <div class="status-badge ${isLive?'status-active':(closed?'status-locked':'status-active')}">${closed?'Закрыто':(isLive?'● Идёт сейчас':'Открыто')}</div>
     </div>`;
   }).join('') : '<div class="empty-state">Пока нет открытых событий</div>';
@@ -2139,6 +2385,8 @@ async function renderEventDetail(id, quiet){
   document.getElementById('chat-log').innerHTML = chat.map(m=> `<div class="chat-msg"><b>${escapeHtml(m.player)}:</b> ${escapeHtml(m.text)}</div>`).join('') || '<div class="empty-state" style="padding:6px 0;">Тишина...</div>';
   const logEl = document.getElementById('chat-log');
   logEl.scrollTop = logEl.scrollHeight;
+  markChatSeen('chat_ev'+id);
+  updateUnreadBadges();
 
   document.getElementById('chat-send')?.addEventListener('click', async (e)=>{
     const sendBtn = e.currentTarget;
@@ -2369,7 +2617,9 @@ async function renderAdmin(){
             <option value="active" ${st==='active'?'selected':''}>Идёт сейчас</option>
             <option value="done" ${st==='done'?'selected':''}>Завершена</option>
           </select>
-          ${(st==='active' && !state.episodes[epId]?.started) ? `<button class="small-btn start-game-btn-highlight" data-quick-start-ep="${epId}">🎲 Начать игру</button>` : ''}
+          <button class="small-btn start-game-btn-highlight" data-quick-start-ep="${epId}">🎲 Начать игру</button>
+          <button class="small-btn danger" data-end-ep="${epId}">🏁 Завершить</button>
+          <button class="small-btn" data-schedule-ep="${epId}">⏳ Отсчёт до старта</button>
           <button class="small-btn" data-open-ep="${epId}">Открыть игру</button>
           ${meta.custom ? `<button class="small-btn danger" data-del-custom-ep="${epId}">Удалить</button>` : ''}
         </div>
@@ -2417,11 +2667,12 @@ async function renderAdmin(){
   `;
   html += `<h2 class="section-title" style="margin-top:30px;">🎯 Метки — Охота за метками</h2>
     <div class="admin-ep-block">
-      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Кликни по карте, чтобы поставить точку — появится форма с описанием, фото и/или ссылкой на видео. Метка сразу сохраняется и получает порядковый номер. Если карта не грузится или неудобна — есть кнопка «+ без карты» ниже, можно просто текстом описать локацию.</div>
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Впиши точный адрес — сайт сам найдёт координаты и поставит метку на карте (либо кликни прямо по карте, если проще). После сохранения метку можно перетаскивать прямо на карте, чтобы поправить положение точнее.</div>
       <div id="admin-markers-map" style="height:320px; border-radius:2px; margin-bottom:12px;"></div>
-      <button class="small-btn" id="marker-add-no-map-btn" style="margin-bottom:12px;">➕ Добавить метку без карты (текстом)</button>
-      <div id="marker-form" style="display:none; border:1px solid var(--ash-dim); padding:12px; border-radius:2px; margin-bottom:12px;">
-        <div class="mono" style="font-size:11px; color:var(--ash); margin-bottom:8px;" id="marker-coords-line">Новая метка — координаты: <span id="marker-coords"></span></div>
+      <div id="marker-form" style="border:1px solid var(--ash-dim); padding:12px; border-radius:2px; margin-bottom:12px;">
+        <div class="mono" style="font-size:11px; color:var(--ash); margin-bottom:8px;" id="marker-coords-line">Координаты появятся после ввода адреса или клика по карте</div>
+        <input type="text" class="paper-input" id="marker-address" placeholder="Точный адрес — обязательно (например: Воронеж, ул. 9 Января, 43)" style="margin-bottom:8px;">
+        <button class="small-btn" id="marker-find-address-btn" style="margin-bottom:8px;">🔍 Найти этот адрес на карте</button>
         <textarea class="paper-input" id="marker-desc" placeholder="Краткое описание — где именно спрятано" style="margin-bottom:8px;"></textarea>
         <input type="text" class="paper-input" id="marker-video" placeholder="Ссылка на видео (YouTube/VK) — необязательно" style="margin-bottom:8px;">
         <label class="photo-frame" id="marker-photo-frame" for="marker-photo-input" style="width:80px; height:80px; margin-bottom:8px;">
@@ -2431,7 +2682,7 @@ async function renderAdmin(){
         <input type="file" id="marker-photo-input" accept="image/*" style="display:none">
         <div>
           <button class="small-btn" id="marker-save-btn">Сохранить метку</button>
-          <button class="small-btn" id="marker-cancel-btn">Отмена</button>
+          <button class="small-btn" id="marker-cancel-btn">Очистить форму</button>
         </div>
       </div>
       <div id="admin-markers-list"></div>
@@ -2471,6 +2722,15 @@ async function renderAdmin(){
     <h2 class="section-title" style="margin-top:30px;">Игроки</h2>
     <div id="admin-players-list"></div>
   `;
+  html += `<div style="margin-top:36px; text-align:center;">
+    <button id="season-finale-btn" style="
+      width:100%; padding:26px; font-family:'Cinzel',serif; font-weight:800; font-size:22px;
+      letter-spacing:.08em; text-transform:uppercase; background:linear-gradient(135deg,#c97c2c,#e8a33f);
+      color:#1c1208; border:2px solid var(--ember-bright); border-radius:6px; cursor:pointer;
+      box-shadow:0 0 30px rgba(245,180,100,.5); animation:pulseGlow 2s ease-in-out infinite;
+    ">🏆 Завершить сезон</button>
+    <div style="font-size:12px; color:var(--ash); margin-top:8px;">Раскроет победителя сезона на весь экран и символически передаст ему весь банк. Необратимо — используй только когда сезон реально закончен.</div>
+  </div>`;
   html += `<h2 class="section-title" style="margin-top:30px; color:#ff8a75;">⚠️ Полный сброс сезона</h2>
     <div class="admin-ep-block" style="border-color:#ff5c5c;">
       <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">
@@ -2530,8 +2790,20 @@ async function renderAdmin(){
     });
   });
   box.querySelectorAll('[data-quick-start-ep]').forEach(btn=> btn.addEventListener('click', async ()=>{
-    await startEpisodeGame(parseInt(btn.dataset.quickStartEp,10));
+    const raw = btn.dataset.quickStartEp;
+    const numId = parseInt(raw,10);
+    await startEpisodeGame(String(numId) === raw ? numId : raw);
     renderAdmin();
+  }));
+  box.querySelectorAll('[data-end-ep]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const raw = btn.dataset.endEp;
+    const numId = parseInt(raw,10);
+    await endEpisodeGame(String(numId) === raw ? numId : raw);
+  }));
+  box.querySelectorAll('[data-schedule-ep]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const raw = btn.dataset.scheduleEp;
+    const numId = parseInt(raw,10);
+    await schedulePendingStart(String(numId) === raw ? numId : raw);
   }));
 
   box.querySelectorAll('.ep-photo-input').forEach(input=>{
@@ -2642,6 +2914,14 @@ async function renderAdmin(){
   renderTasksList(SOCIAL_TASKS, 'social-tasks-list', '🎭');
   renderTasksList(CREATIVE_TASKS, 'creative-tasks-list', '🛠');
 
+  document.getElementById('season-finale-btn').addEventListener('click', async ()=>{
+    const eligible = state.profiles.filter(p=>p.displayNameSet);
+    if(!eligible.length){ alert('Пока нет ни одного игрока с результатами.'); return; }
+    const winner = [...eligible].sort((a,b)=>b.points-a.points)[0];
+    if(!confirm(`Завершить сезон? Победитель по текущим баллам: ${winner.name} (${winner.points} б.). Это запустит большую анимацию у вас на экране и объявление в Telegram/push.`)) return;
+    await playSeasonFinale(winner);
+  });
+
   document.getElementById('full-season-reset-btn').addEventListener('click', async ()=>{
     if(!confirm('Точно сбросить весь сезон? Все имена, фото и баллы всех игроков исчезнут. Логины и пароли останутся прежними.')) return;
     if(!confirm('Последняя проверка — это нельзя отменить. Сбросить прогресс всех 25 аккаунтов и обнулить банк?')) return;
@@ -2742,38 +3022,58 @@ function renderTasksList(taskArray, elId, icon){
     setTimeout(()=> renderAdminEventsList(), 300);
   }));
 }
+async function geocodeAddress(address){
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address + ', Воронеж')}`;
+  const res = await fetch(url, { headers: { 'Accept-Language':'ru' } });
+  const data = await res.json();
+  if(!data.length) return null;
+  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+}
+async function reverseGeocode(lat, lng){
+  try{
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+    const res = await fetch(url, { headers: { 'Accept-Language':'ru' } });
+    const data = await res.json();
+    return data.display_name || '';
+  } catch(e){ return ''; }
+}
+
 async function initMarkersAdmin(){
   const holder = document.getElementById('admin-markers-map');
   if(!holder || typeof L === 'undefined') return;
 
+  function setFormCoords(lat, lng){
+    document.getElementById('marker-form').dataset.lat = lat;
+    document.getElementById('marker-form').dataset.lng = lng;
+    document.getElementById('marker-coords-line').textContent = `📍 Координаты: ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+  }
+
   if(!markersAdminMap){
     markersAdminMap = L.map(holder).setView([51.6720, 39.1843], 12); // Воронеж
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(markersAdminMap);
-    markersAdminMap.on('click', (e)=>{
-      document.getElementById('marker-form').style.display = 'block';
-      document.getElementById('marker-coords').textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
-      document.getElementById('marker-form').dataset.lat = e.latlng.lat;
-      document.getElementById('marker-form').dataset.lng = e.latlng.lng;
-      document.getElementById('marker-desc').value = '';
-      document.getElementById('marker-video').value = '';
-      markerPhotoData = null;
-      document.getElementById('marker-photo-preview').style.display = 'none';
-      document.getElementById('marker-photo-placeholder').style.display = 'block';
+    markersAdminMap.on('click', async (e)=>{
+      setFormCoords(e.latlng.lat, e.latlng.lng);
+      markersAdminMap.setView([e.latlng.lat, e.latlng.lng], 15);
+      document.getElementById('marker-coords-line').textContent = '📍 Ищу адрес по клику...';
+      const addr = await reverseGeocode(e.latlng.lat, e.latlng.lng);
+      if(addr) document.getElementById('marker-address').value = addr;
+      setFormCoords(e.latlng.lat, e.latlng.lng);
     });
   }
   setTimeout(()=> markersAdminMap.invalidateSize(), 150);
 
-  document.getElementById('marker-add-no-map-btn').onclick = ()=>{
-    document.getElementById('marker-form').style.display = 'block';
-    document.getElementById('marker-coords-line').innerHTML = '📍 Без точных координат — только описание';
-    delete document.getElementById('marker-form').dataset.lat;
-    delete document.getElementById('marker-form').dataset.lng;
-    document.getElementById('marker-desc').value = '';
-    document.getElementById('marker-video').value = '';
-    markerPhotoData = null;
-    document.getElementById('marker-photo-preview').style.display = 'none';
-    document.getElementById('marker-photo-placeholder').style.display = 'block';
-    document.getElementById('marker-desc').focus();
+  document.getElementById('marker-find-address-btn').onclick = async ()=>{
+    const address = document.getElementById('marker-address').value.trim();
+    if(!address){ alert('Сначала впиши адрес.'); return; }
+    const btn = document.getElementById('marker-find-address-btn');
+    btn.disabled = true; btn.textContent = 'Ищу...';
+    const found = await geocodeAddress(address);
+    btn.disabled = false; btn.textContent = '🔍 Найти этот адрес на карте';
+    if(!found){ alert('Не удалось найти этот адрес — проверь написание, или кликни точку прямо на карте.'); return; }
+    setFormCoords(found.lat, found.lng);
+    markersAdminMap.setView([found.lat, found.lng], 16);
+    if(markersAdminSearchMarker) markersAdminMap.removeLayer(markersAdminSearchMarker);
+    markersAdminSearchMarker = L.marker([found.lat, found.lng], {opacity:0.6}).addTo(markersAdminMap);
   };
 
   document.getElementById('marker-photo-input').onchange = (e)=>{
@@ -2788,26 +3088,36 @@ async function initMarkersAdmin(){
     reader.readAsDataURL(file);
   };
 
-  document.getElementById('marker-cancel-btn').onclick = ()=>{ document.getElementById('marker-form').style.display = 'none'; };
+  document.getElementById('marker-cancel-btn').onclick = ()=>{
+    const form = document.getElementById('marker-form');
+    delete form.dataset.lat; delete form.dataset.lng;
+    document.getElementById('marker-address').value = '';
+    document.getElementById('marker-desc').value = '';
+    document.getElementById('marker-video').value = '';
+    document.getElementById('marker-coords-line').textContent = 'Координаты появятся после ввода адреса или клика по карте';
+    markerPhotoData = null;
+    document.getElementById('marker-photo-preview').style.display = 'none';
+    document.getElementById('marker-photo-placeholder').style.display = 'block';
+  };
 
   document.getElementById('marker-save-btn').onclick = async ()=>{
     const form = document.getElementById('marker-form');
+    const address = document.getElementById('marker-address').value.trim();
     const desc = document.getElementById('marker-desc').value.trim();
     const video = document.getElementById('marker-video').value.trim();
+    if(!address){ alert('Адрес обязателен — без него метка не сохранится. Впиши адрес и нажми «Найти этот адрес на карте», либо кликни точку прямо на карте.'); return; }
+    if(form.dataset.lat === undefined){ alert('Сначала найди координаты — нажми «Найти этот адрес на карте» или кликни по карте.'); return; }
     if(!desc){ alert('Напиши короткое описание метки.'); return; }
-    const hasCoords = form.dataset.lat !== undefined && form.dataset.lng !== undefined;
     const markers = await sGet('markers_ep2', []);
     const num = markers.length + 1;
     markers.push({
       id: 'm'+Date.now(), number: num,
-      lat: hasCoords ? parseFloat(form.dataset.lat) : null,
-      lng: hasCoords ? parseFloat(form.dataset.lng) : null,
-      description: desc, photo: markerPhotoData, video: video || null
+      lat: parseFloat(form.dataset.lat), lng: parseFloat(form.dataset.lng),
+      address, description: desc, photo: markerPhotoData, video: video || null
     });
     const ok = await sSet('markers_ep2', markers);
     if(!ok){ alert('Не удалось сохранить — попробуй ещё раз.'); return; }
-    form.style.display = 'none';
-    document.getElementById('marker-video').value = '';
+    document.getElementById('marker-cancel-btn').click();
     renderMarkersMapPoints();
     renderAdminMarkersList();
   };
@@ -2817,6 +3127,25 @@ async function initMarkersAdmin(){
   renderMarkersMapPoints();
   renderAdminMarkersList();
 }
+let markersAdminSearchMarker = null;
+let playerMarkersMap = null;
+async function renderPlayerMarkersMap(episodeId){
+  const holder = document.getElementById('player-markers-map-'+episodeId);
+  if(!holder || typeof L === 'undefined') return;
+  if(!playerMarkersMap){
+    playerMarkersMap = L.map(holder).setView([51.6720, 39.1843], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(playerMarkersMap);
+  }
+  setTimeout(()=> playerMarkersMap.invalidateSize(), 150);
+  const markers = await sGet('markers_ep2', []);
+  markers.forEach(m=>{
+    if(m.lat === null || m.lat === undefined) return;
+    const photoHtml = m.photo ? `<br><img src="${m.photo}" style="width:100px; border-radius:4px; margin-top:4px;">` : '';
+    const videoHtml = m.video ? `<br><a href="${escapeHtml(m.video)}" target="_blank" rel="noopener">▶ Смотреть видео</a>` : '';
+    const addrHtml = m.address ? `<br><span class="mono" style="font-size:11px; color:var(--ash);">${escapeHtml(m.address)}</span>` : '';
+    L.marker([m.lat, m.lng]).addTo(playerMarkersMap).bindPopup(`<b>Метка №${m.number}</b>${addrHtml}<br>${escapeHtml(m.description)}${photoHtml}${videoHtml}`);
+  });
+}
 async function renderMarkersMapPoints(){
   if(!markersAdminMap) return;
   const markers = await sGet('markers_ep2', []);
@@ -2825,7 +3154,15 @@ async function renderMarkersMapPoints(){
     if(m.lat === null || m.lng === null || m.lat === undefined || m.lng === undefined) return; // метка без карты — только в списке ниже
     const photoHtml = m.photo ? `<br><img src="${m.photo}" style="width:100px; border-radius:4px; margin-top:4px;">` : '';
     const videoHtml = m.video ? `<br><a href="${escapeHtml(m.video)}" target="_blank" rel="noopener">▶ Смотреть видео</a>` : '';
-    L.marker([m.lat, m.lng]).addTo(markersAdminMarkerLayer).bindPopup(`<b>Метка №${m.number}</b><br>${escapeHtml(m.description)}${photoHtml}${videoHtml}`);
+    const addrHtml = m.address ? `<br><span style="font-size:11px; color:#888;">${escapeHtml(m.address)}</span>` : '';
+    const marker = L.marker([m.lat, m.lng], { draggable:true }).addTo(markersAdminMarkerLayer)
+      .bindPopup(`<b>Метка №${m.number}</b>${addrHtml}<br>${escapeHtml(m.description)}${photoHtml}${videoHtml}<br><i style="font-size:11px;">Можно перетащить эту метку прямо на карте</i>`);
+    marker.on('dragend', async ()=>{
+      const pos = marker.getLatLng();
+      const fresh = await sGet('markers_ep2', []);
+      const item = fresh.find(x=>x.id===m.id);
+      if(item){ item.lat = pos.lat; item.lng = pos.lng; await sSet('markers_ep2', fresh); }
+    });
   });
 }
 async function renderAdminMarkersList(){
