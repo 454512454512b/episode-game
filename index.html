@@ -678,7 +678,6 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
       <button data-view="profile">Профиль</button>
     </nav>
     <div id="header-bank-badge" class="header-bank-badge" title="Общий банк сезона">💰 —</div>
-    <button id="sound-toggle-btn" class="small-btn" title="Звук">🔊</button>
     <div id="header-avatar" class="header-avatar" title="Профиль">?</div>
     <button id="logout-btn" class="small-btn" title="Выйти из аккаунта">Выйти</button>
   </header>
@@ -1377,7 +1376,7 @@ function getAudioCtx(){
   if(audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
-function soundsEnabled(){ return localStorage.getItem('episode_sound') !== 'off'; }
+function soundsEnabled(){ return false; } /* звук отключён по просьбе — не нравился */
 function playTone(freq, duration, type='sine', volume=0.15, delay=0){
   if(!soundsEnabled()) return;
   try{
@@ -1659,25 +1658,6 @@ function updateDrawerUserCard(){
 }
 document.getElementById('header-avatar').addEventListener('click', ()=> showView('profile'));
 
-document.getElementById('sound-toggle-btn').addEventListener('click', ()=>{
-  const btn = document.getElementById('sound-toggle-btn');
-  const isOff = localStorage.getItem('episode_sound') === 'off';
-  if(isOff){
-    localStorage.removeItem('episode_sound');
-    btn.textContent = '🔊';
-    playTone(660,0.15,'sine',0.15); // короткий звук-подтверждение
-    if(!ambientNodes) toggleAmbient();
-  } else {
-    localStorage.setItem('episode_sound','off');
-    stopAmbient();
-    btn.textContent = '🔇';
-  }
-});
-(function initSoundBtn(){
-  const btn = document.getElementById('sound-toggle-btn');
-  if(btn) btn.textContent = soundsEnabled() ? '🔊' : '🔇';
-})();
-
 async function updateHeaderBank(){
   const amount = await sGet('prize_pool', 0);
   const text = `💰 ${Number(amount).toLocaleString('ru-RU')} ₽`;
@@ -1928,7 +1908,8 @@ async function endEpisodeGame(id){
   const base = getEpisodeMeta(id);
   const eps = await sGet('episodes', {});
   eps[id] = eps[id] || {};
-  eps[id].status = 'done';
+  eps[id].status = 'locked';
+  eps[id].started = false;
   await sSet('episodes', eps);
   state.episodes = eps;
   await pushEvent(`🏁 Эпизод «${base.name}» завершён организатором`);
@@ -2075,7 +2056,7 @@ function renderEpisodes(){
     const ep = getEpisodeMeta(epId);
     if(!ep) return '';
     const st = state.episodes[ep.id]?.status || 'locked';
-    const label = {locked:'Закрыт', rules:'Правила открыты', active:'Идёт сейчас', done:'Завершена'}[st];
+    const label = {locked:'Закрыт', rules:'Правила открыты', active:'Идёт сейчас'}[st] || 'Закрыт';
     const iconHtml = ep.photo ? `<img src="${ep.photo}" style="width:34px; height:34px; border-radius:4px; object-fit:cover;">` : `<span class="ep-icon">${ep.icon}</span>`;
     const unread = unreadMap[ep.id] || 0;
     const unreadHtml = unread > 0 ? `<span class="card-unread-badge">${unread > 99 ? '99+' : unread}</span>` : '';
@@ -2615,7 +2596,6 @@ async function renderAdmin(){
             <option value="locked" ${st==='locked'?'selected':''}>Закрыт</option>
             <option value="rules" ${st==='rules'?'selected':''}>Показать правила</option>
             <option value="active" ${st==='active'?'selected':''}>Идёт сейчас</option>
-            <option value="done" ${st==='done'?'selected':''}>Завершена</option>
           </select>
           <button class="small-btn start-game-btn-highlight" data-quick-start-ep="${epId}">🎲 Начать игру</button>
           <button class="small-btn danger" data-end-ep="${epId}">🏁 Завершить</button>
