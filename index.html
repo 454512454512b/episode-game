@@ -485,6 +485,9 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 .event-card:hover{ border-color:var(--ember);}
 .event-card.closed{ opacity:.55; cursor:not-allowed;}
 .event-card.event-live{ border-color:var(--ember-bright); background:rgba(201,124,44,.08); animation: cardIn .5s ease forwards, pulseGlow 2.4s ease-in-out infinite; }
+tr.player-highlighted td{ background:rgba(201,124,44,.1); }
+tr.player-highlighted{ box-shadow: inset 3px 0 0 var(--ember-bright); animation: pulseGlow 2.6s ease-in-out infinite; }
+.player-card.player-highlighted{ border-color:var(--ember-bright); background:rgba(201,124,44,.1); animation: pulseGlow 2.6s ease-in-out infinite; }
 .event-card .evname{ font-family:'Cinzel',serif; font-size:16px;}
 .start-game-btn-highlight{
   font-size:16px !important; padding:14px 26px !important; font-weight:700;
@@ -916,6 +919,10 @@ const EPISODES = [
 ];
 const CHAPTER_WORD = "Эпизод";
 
+/* Подсвечиваются на Главной и в Игроках — сопоставлено по исходному порядку регистрации:
+   Ксеня, Никита Т, Егор, Злата, Арина, Саня, Тимур, Ваня Щ, Ваня К, Женя, Даша, Ульяна Ш, Дима М, Сава, Маша Ф */
+const HIGHLIGHTED_PLAYER_IDS = ['p1','p2','p3','p4','p5','p8','p9','p10','p11','p12','p14','p16','p23','p26','p27'];
+
 let state = { profiles:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:false, currentEpisode:null, chatPoll:null, pendingSave:false };
 
 function getEpisodeMeta(id){
@@ -956,10 +963,10 @@ const SEED_ACCOUNTS = [
   {login:"Никита", password:"211998"}, {login:"Сава", password:"260848"}, {login:"Саня", password:"367831"},
   {login:"Тимур", password:"531762"}, {login:"Ваня", password:"301295"}, {login:"Ваня", password:"674915"},
   {login:"Карина", password:"849828"}, {login:"Ульяна", password:"889308"}, {login:"Ульяна", password:"396454"},
-  {login:"Дима", password:"728982"}, {login:"Даша", password:"574315"}, {login:"Марго", password:"120388"},
-  {login:"Аля", password:"982220"}, {login:"Женя", password:"232689"}, {login:"Ваня", password:"710700"},
+  {login:"Дима", password:"728982"}, {login:"Катя", password:"574315"}, {login:"Марго", password:"120388"},
+  {login:"Аля", password:"982220"}, {login:"Елисей", password:"232689"}, {login:"Ваня", password:"710700"},
   {login:"Никита", password:"136431"}, {login:"Маша", password:"609774"}, {login:"Даня", password:"563766"},
-  {login:"Тим", password:"144119"}, {login:"Даша", password:"525252"}, {login:"Женя", password:"445566"}
+  {login:"Тим", password:"144119"}, {login:"Женя", password:"764892"}, {login:"Даша", password:"907982"}
 ];
 
 /* Diagnostic self-check, shown as a visible banner so a non-developer can screenshot the exact reason */
@@ -1051,16 +1058,59 @@ async function pSet(key, value){
 }
 
 /* ============ PROFILES (players) — plain array stored under app_storage['players'], no Supabase Auth involved ============ */
+/* ЗАЩИТА: единственный правильный способ сохранить список игроков — отказывается писать
+   пустой/битый список. Раньше разные места в коде писали игроков напрямую через sSet,
+   и если чтение перед этим на долю секунды сбоило (sGet тихо возвращает [] как запасной вариант),
+   можно было случайно стереть всех игроков этой же самой пустотой. Теперь это невозможно.
+   Плюс — каждое успешное сохранение автоматически кладёт ПОЛНЫЙ снимок всего игрового состояния
+   (не только игроков — эпизоды, события, банк, метки, команды) в отдельное хранилище (последние 10),
+   чтобы при любой будущей проблеме можно было восстановить всё разом через Админку. */
+const BACKUP_KEYS = ['players','episodes','custom_events','custom_episodes','episode_overrides','prize_pool','markers_ep2','teams_ep4'];
+async function saveFullBackup(){
+  try{
+    const snapshot = {};
+    for(const k of BACKUP_KEYS){
+      const fallback = (k==='episodes' || k==='episode_overrides' || k==='teams_ep4') ? {} : (k==='prize_pool' ? 0 : []);
+      snapshot[k] = await sGet(k, fallback);
+    }
+    if(!Array.isArray(snapshot.players) || snapshot.players.length === 0) return false; // тот же принцип защиты
+    const backups = await sGet('full_backups', []);
+    backups.push({ ts: Date.now(), data: snapshot });
+    await sSet('full_backups', backups.slice(-10)); // держим только последние 10 — не бесконечно
+    return true;
+  } catch(e){ console.warn('Полная резервная копия не сохранилась (не критично):', e); return false; }
+}
+async function savePlayers(players){
+  if(!Array.isArray(players) || players.length === 0){
+    console.error('Отказ сохранить пустой список игроков — похоже на сбой чтения базы, а не настоящее удаление всех.');
+    return false;
+  }
+  const ok = await sSet('players', players);
+  if(ok) await saveFullBackup();
+  return ok;
+}
+
 async function ensurePlayersSeeded(){
-  const existing = await sGet('players', null);
-  if(existing && existing.length) return existing;
-  const seeded = SEED_ACCOUNTS.map((acc,i)=> ({
-    id: 'p' + (i+1), login: acc.login, password: acc.password,
-    name: acc.login, displayNameSet: false, photo: null,
-    number: String(i+1).padStart(2,'0'), points: 0, achievements: []
-  }));
-  await sSet('players', seeded);
-  return seeded;
+  if(!sbClient) return [];
+  try{
+    const { data, error } = await sbClient.from('app_storage').select('value').eq('key','players').maybeSingle();
+    if(error){
+      // Настоящая ошибка чтения (сбой сети, база ещё просыпается и т.п.) — это НЕ значит "базы никогда не было".
+      // Раньше здесь тихо пересоздавали данные с нуля, затирая реальный прогресс — это и было причиной пропажи баллов.
+      throw new Error('Не удалось подключиться к базе — попробуй ещё раз через несколько секунд.');
+    }
+    if(data && data.value && data.value.length) return data.value;
+    // Сюда попадаем только если записи № правда не существует (без ошибки чтения) — то есть самый первый запуск когда-либо.
+    const seeded = SEED_ACCOUNTS.map((acc,i)=> ({
+      id: 'p' + (i+1), login: acc.login, password: acc.password,
+      name: acc.login, displayNameSet: false, photo: null,
+      number: String(i+1).padStart(2,'0'), points: 0, achievements: []
+    }));
+    await sSet('players', seeded);
+    return seeded;
+  } catch(e){
+    throw e; // не проглатываем — пусть человек увидит понятную ошибку и попробует снова, а не потеряет данные молча
+  }
 }
 async function fetchProfiles(){
   const list = await sGet('players', []);
@@ -1305,7 +1355,7 @@ document.getElementById('first-time-continue-btn').addEventListener('click', asy
     target.name = displayName;
     target.displayNameSet = true;
     if(photoData) target.photo = photoData;
-    const ok = await sSet('players', players);
+    const ok = await savePlayers(players);
     if(!ok){ errorEl.textContent = 'Не удалось сохранить — проверь интернет и попробуй ещё раз.'; return; }
 
     state.me = target;
@@ -1359,7 +1409,7 @@ async function applyPoints(playerId, delta, reason){
   if(!p) return null;
   p.points = (p.points||0) + delta;
   if(reason) p.achievements = [...(p.achievements||[]), reason];
-  const ok = await sSet('players', players);
+  const ok = await savePlayers(players);
   if(!ok){ alert('Не удалось начислить баллы — проблема с сохранением, попробуй ещё раз.'); return null; }
   state.profiles = await fetchProfiles();
   await pushEvent(`${p.name} ${delta>=0?'получил':'потерял'} ${Math.abs(delta)} балл(ов)${reason? ' — '+reason:''}`);
@@ -1545,8 +1595,8 @@ function startBackgroundPollers(){
     state.episodes = await sGet('episodes', {});
     renderGlobalTaggerBanner();
     if(document.getElementById('view-home').classList.contains('active')) renderHeader();
-    await checkHourlyAwards();
     await checkPendingStarts();
+    await checkPeriodicAwards();
     await updateUnreadBadges();
   }, 15000);
   setInterval(tickGlobalCountdownDisplay, 1000);
@@ -1707,8 +1757,8 @@ async function refreshAll(){
   updateDrawerUserCard();
   updateHeaderBank();
   if(__lastKnownPrizePool === null) __lastKnownPrizePool = await sGet('prize_pool', 0);
-  await checkHourlyAwards();
   await checkPendingStarts();
+    await checkPeriodicAwards();
   await updateUnreadBadges();
 }
 
@@ -1773,14 +1823,15 @@ function renderGlobalTaggerBanner(){
   if(!banner) return;
   const active = EPISODES.find(e=> e.actions && (state.episodes[e.id]?.status)==='active' && state.episodes[e.id]?.started);
   const data = active ? state.episodes[active.id] : null;
-  const taggerId = (active && active.showTagger) ? data?.tagger : null;
+  const taggerIds = (active && active.showTagger) ? (data?.taggers || []) : [];
   const endsAt = data ? data.endsAt : null;
 
   if(__countdownIntervalId){ clearInterval(__countdownIntervalId); __countdownIntervalId = null; }
 
   if(active){
-    const namePart = active.showTagger && taggerId
-      ? `⚡ ${escapeHtml(active.name)} — сейчас водит: <b>${escapeHtml(state.profiles.find(p=>p.id===taggerId)?.name || '—')}</b>`
+    const taggerNames = taggerIds.map(tid=> state.profiles.find(p=>p.id===tid)?.name).filter(Boolean);
+    const namePart = active.showTagger && taggerNames.length
+      ? `⚡ ${escapeHtml(active.name)} — сейчас водит${taggerNames.length>1?'ят':''}: <b>${taggerNames.map(escapeHtml).join(', ')}</b>`
       : `⚡ Эпизод «${escapeHtml(active.name)}» идёт сейчас`;
     banner.style.display = 'block';
     if(endsAt && endsAt > Date.now()){
@@ -1870,8 +1921,7 @@ async function playSeasonFinale(winner){
 }
 
 /* Запуск игры — общая логика, вызывается и из Админки напрямую, и из кнопки внутри самой главы.
-   Помимо рандомайзера водящего и таймера, ставит метку startedAt/lastHourlyAward для автоматического
-   почасового начисления баллов (см. checkHourlyAwards). */
+   Баллы теперь начисляются за конкретные действия (см. game-action-btn для 'tag'), а не по времени. */
 async function startEpisodeGame(id){
   const base = getEpisodeMeta(id);
   const pool = state.profiles.filter(p=>p.displayNameSet);
@@ -1890,8 +1940,12 @@ async function startEpisodeGame(id){
   eps[id].endsAt = null;
   eps[id].pendingStart = null;
   eps[id].startedAt = Date.now();
-  eps[id].lastHourlyAward = Date.now();
-  if(chosen) eps[id].tagger = chosen.id;
+  if(chosen){
+    eps[id].taggers = [chosen.id]; // теперь массив — водящих может быть несколько одновременно
+    eps[id].taggerBecameAt = { [chosen.id]: Date.now() };
+    eps[id].everTagger = [chosen.id]; // кто хоть раз был водящим за этот забег — для бонуса "неуловимый" в конце
+    eps[id].lastPeriodicAward = Date.now();
+  }
   await sSet('episodes', eps);
   await sSet('chat_ep'+id, []); // свежий старт — старый чат этого эпизода очищается
   state.episodes = eps;
@@ -1908,6 +1962,19 @@ async function endEpisodeGame(id){
   const base = getEpisodeMeta(id);
   const eps = await sGet('episodes', {});
   eps[id] = eps[id] || {};
+
+  // Бонус "неуловимый" — те, кто ни разу за этот забег не был водящим, получают +3
+  if(base.showTagger && eps[id].started && Array.isArray(eps[id].everTagger)){
+    const everTagger = eps[id].everTagger;
+    const neverCaught = state.profiles.filter(p=> p.displayNameSet && !everTagger.includes(p.id));
+    for(const p of neverCaught){
+      await applyPoints(p.id, 3, 'неуловимый — ни разу не поймали');
+    }
+    if(neverCaught.length){
+      await pushEvent(`🏆 Неуловимые в «${base.name}»: ${neverCaught.map(p=>p.name).join(', ')} — +3 балла каждому`);
+    }
+  }
+
   eps[id].status = 'locked';
   eps[id].started = false;
   await sSet('episodes', eps);
@@ -1949,29 +2016,31 @@ async function checkPendingStarts(){
   }
 }
 
-/* ============ АВТОМАТИЧЕСКОЕ ПОЧАСОВОЕ НАЧИСЛЕНИЕ (для глав с водящим) ============
-   Работает "догоняющим" способом: при каждом обновлении данных на любом устройстве —
-   считаем, сколько целых часов прошло с последнего начисления, и начисляем все разом.
-   Не требует, чтобы сайт был открыт именно в момент истечения часа — достаточно,
-   чтобы кто-нибудь открыл сайт хотя бы раз за прошедшее время. */
-async function checkHourlyAwards(){
+/* ============ ПАССИВНОЕ НАЧИСЛЕНИЕ РАЗ В 4 ЧАСА (Городские Салки) ============
+   "Догоняющая" модель, как и раньше: считаем, сколько целых 4-часовых периодов прошло
+   с последнего начисления, и начисляем разом +1 за каждый. Работает у того, кто первым
+   откроет сайт после истечения периода — не нужно, чтобы сайт был открыт именно в этот момент.
+   Защищено через savePlayers — пустой список из-за сбоя чтения никогда не перезапишет реальный. */
+const PERIODIC_AWARD_MS = 4 * 3600000; // 4 часа
+async function checkPeriodicAwards(){
   const eps = await sGet('episodes', {});
   let changed = false;
   for(const base of EPISODES){
     if(!base.showTagger) continue;
     const data = eps[base.id];
-    if(!data || data.status !== 'active' || !data.started || !data.lastHourlyAward) continue;
+    if(!data || data.status !== 'active' || !data.started || !data.lastPeriodicAward) continue;
 
-    const hoursElapsed = Math.floor((Date.now() - data.lastHourlyAward) / 3600000);
-    if(hoursElapsed < 1) continue;
+    const periodsElapsed = Math.floor((Date.now() - data.lastPeriodicAward) / PERIODIC_AWARD_MS);
+    if(periodsElapsed < 1) continue;
 
     const players = await sGet('players', []);
-    const eligible = players.filter(p => p.displayNameSet && p.id !== data.tagger);
-    eligible.forEach(p=> p.points = (p.points||0) + hoursElapsed);
-    await sSet('players', players);
-    await pushEvent(`⏱ Прошёл ${hoursElapsed} ч. — все, кроме водящего, получили +${hoursElapsed} балл(ов) в «${base.name}»`);
+    const taggerIds = data.taggers || [];
+    const eligible = players.filter(p => p.displayNameSet && !taggerIds.includes(p.id));
+    eligible.forEach(p=> p.points = (p.points||0) + periodsElapsed);
+    const ok = await savePlayers(players);
+    if(ok) await pushEvent(`⏱ Прошло ${periodsElapsed * 4} ч. — все, кроме водящих, получили +${periodsElapsed} балл(ов) в «${base.name}»`);
 
-    data.lastHourlyAward += hoursElapsed * 3600000;
+    data.lastPeriodicAward += periodsElapsed * PERIODIC_AWARD_MS;
     changed = true;
   }
   if(changed){
@@ -2010,7 +2079,7 @@ function renderHome(){
   const tbody = document.getElementById('lb-body');
   tbody.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img class="avatar-sm" src="${p.photo}">` : `<span class="avatar-sm" style="display:inline-flex;align-items:center;justify-content:center;background:var(--ash-dim);">${escapeHtml(p.name[0]||'?')}</span>`;
-    return `<tr><td class="rank ${i===0?'top1':''}">${i+1}</td><td>${av}${escapeHtml(p.name)} <span class="mono" style="color:var(--ash);font-size:11px;">№${p.number}</span></td><td style="text-align:right" class="pts" data-target="${p.points}">0</td></tr>`;
+    return `<tr class="${HIGHLIGHTED_PLAYER_IDS.includes(p.id) ? 'player-highlighted' : ''}"><td class="rank ${i===0?'top1':''}">${i+1}</td><td>${av}${escapeHtml(p.name)} <span class="mono" style="color:var(--ash);font-size:11px;">№${p.number}</span></td><td style="text-align:right" class="pts" data-target="${p.points}">0</td></tr>`;
   }).join('') || '<tr><td colspan="3" class="empty-state">Пока нет игроков</td></tr>';
   animateCounts();
 }
@@ -2033,7 +2102,7 @@ function renderPlayers(){
   const sorted = [...state.profiles].filter(p=>p.displayNameSet).sort((a,b)=> b.points - a.points);
   grid.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
-    return `<div class="player-card" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
+    return `<div class="player-card ${HIGHLIGHTED_PLAYER_IDS.includes(p.id) ? 'player-highlighted' : ''}" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
   }).join('') || '<div class="empty-state">Пока нет игроков</div>';
   grid.querySelectorAll('.player-card').forEach(c=> c.addEventListener('click', ()=> openProfileModal(c.dataset.id)));
 }
@@ -2084,7 +2153,8 @@ async function openEpisode(id){
   let html = `<h2 class="section-title" style="display:flex; align-items:center; gap:14px;"><span class="ep-icon" style="font-size:30px;">${ep.icon}</span>${CHAPTER_WORD} ${id}: ${escapeHtml(ep.name)}</h2><div class="rules-block">${escapeHtml(ep.rules)}</div>`;
 
   if(data.status === 'active'){
-    const isTagger = ep.showTagger && data.tagger === state.me.id;
+    const taggerIds = data.taggers || [];
+    const isTagger = ep.showTagger && taggerIds.includes(state.me.id);
     const actionsHtml = ep.actions ? `
       <div class="game-actions" style="margin:14px 0; padding:12px; border:1px solid var(--ash-dim); border-radius:2px;">
         ${ep.showTagger ? '' : '<div style="font-family:\'JetBrains Mono\',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">ДЕЙСТВИЯ</div>'}
@@ -2111,10 +2181,23 @@ async function openEpisode(id){
         taggerBlock = `<div class="empty-state" style="margin:14px 0;">Эпизод открыт, но ещё не запущен организатором — подожди начала.</div>`;
       }
     } else if(ep.showTagger && data.started){
+      const otherTaggerNames = taggerIds.filter(tid=>tid!==state.me.id).map(tid=> state.profiles.find(p=>p.id===tid)?.name).filter(Boolean);
       if(isTagger){
-        taggerBlock = `<div class="tagger-line" style="color:var(--ember-bright);">Сейчас водишь ты!</div>${actionsHtml}`;
+        const othersLine = otherTaggerNames.length ? `<div style="font-size:12px; color:var(--ash); margin-top:2px;">Ещё водят: ${otherTaggerNames.map(escapeHtml).join(', ')}</div>` : '';
+        taggerBlock = `<div class="tagger-line" style="color:var(--ember-bright);">Сейчас водишь ты!</div>${othersLine}${actionsHtml}`;
       } else {
-        taggerBlock = `<div class="tagger-line">Сейчас водит: <b>${escapeHtml(state.profiles.find(p=>p.id===data.tagger)?.name || '—')}</b></div>`;
+        const allNames = taggerIds.map(tid=> state.profiles.find(p=>p.id===tid)?.name).filter(Boolean);
+        taggerBlock = `<div class="tagger-line">Сейчас водит${allNames.length>1?'ят':''}: <b>${allNames.map(escapeHtml).join(', ') || '—'}</b></div>`;
+      }
+      if(state.isAdmin){
+        const addableTagger = state.profiles.filter(p=> p.displayNameSet && !taggerIds.includes(p.id));
+        taggerBlock += `<div style="margin:14px 0; padding:12px; border:1px solid var(--ash-dim); border-radius:2px;">
+          <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">ОРГАНИЗАТОРУ</div>
+          ${addableTagger.length ? `
+            <select class="paper-select" id="add-tagger-select" style="margin-bottom:8px; width:100%;">${addableTagger.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')}</select>
+            <button class="action-btn" id="add-tagger-btn">➕ Добавить ещё одну воду</button>
+          ` : '<div style="font-size:12px; color:var(--ash);">Все зашедшие уже водят.</div>'}
+        </div>`;
       }
     }
 
@@ -2127,8 +2210,11 @@ async function openEpisode(id){
 
     const geoBlockHtml = ep.needsGeoShare ? `
       <button class="action-btn" id="share-geo-btn">Поделиться геолокацией</button>
+      ${state.isAdmin ? `<button class="action-btn" id="show-all-geo-btn" style="margin-left:8px;">📍 Геолокация всех участников</button>` : ''}
       <div id="geo-map-${id}" style="height:260px; border-radius:2px; margin-top:10px; display:none;"></div>
-      <div class="geo-list" id="geo-list"></div>` : '';
+      <div id="all-geo-map-${id}" style="height:300px; border-radius:2px; margin-top:10px; display:none;"></div>
+      <div class="geo-list" id="geo-list"></div>
+      <div id="all-geo-list" style="margin-top:8px;"></div>` : '';
     const markersMapHtml = ep.showMarkersMap ? `
       <h3 style="margin-top:10px; font-family:'Cinzel',serif; font-size:15px; color:var(--ember-bright);">Карта меток</h3>
       <div style="font-size:12px; color:var(--ash); margin-bottom:8px;">Метки не пропадают — расставлены заранее организатором, ищите их по подсказкам в чате.</div>
@@ -2160,6 +2246,7 @@ async function openEpisode(id){
       const half = Math.ceil(shuffled.length/2);
       const teams = { A: shuffled.slice(0,half).map(p=>p.id), B: shuffled.slice(half).map(p=>p.id) };
       await sSet('teams_ep4', teams);
+      await saveFullBackup();
       await pushEvent('🚩 Ночной дозор — команды разделены заново');
       renderTeamsResult(teams);
     });
@@ -2169,6 +2256,23 @@ async function openEpisode(id){
   if(data.status === 'active'){
     const startBtn = document.getElementById('start-tagger-btn');
     if(startBtn) startBtn.addEventListener('click', async ()=> startEpisodeGame(id));
+
+    const addTaggerBtn = document.getElementById('add-tagger-btn');
+    if(addTaggerBtn) addTaggerBtn.addEventListener('click', async ()=>{
+      const sel = document.getElementById('add-tagger-select');
+      const picked = state.profiles.find(p=>p.id===sel.value);
+      if(!picked) return;
+      const eps = await sGet('episodes', {});
+      eps[id] = eps[id] || {};
+      eps[id].taggers = [...new Set([...(eps[id].taggers||[]), picked.id])];
+      eps[id].taggerBecameAt = eps[id].taggerBecameAt || {};
+      eps[id].taggerBecameAt[picked.id] = Date.now();
+      eps[id].everTagger = [...new Set([...(eps[id].everTagger||[]), picked.id])];
+      await sSet('episodes', eps);
+      await pushEvent(`⚡ Организатор добавил ещё одного водящего: ${picked.name}`);
+      sendPushToAll('EPISODE', `${ep.name}: теперь также водит ${picked.name}!`);
+      openEpisode(id);
+    });
 
     const geoBtn = document.getElementById('share-geo-btn');
     if(geoBtn) geoBtn.addEventListener('click', ()=>{
@@ -2180,6 +2284,33 @@ async function openEpisode(id){
         renderGeoList(id);
       }, ()=> alert('Не удалось получить геолокацию — проверь, что разрешил доступ в браузере'));
     });
+
+    let allGeoMap = null;
+    const showAllGeoBtn = document.getElementById('show-all-geo-btn');
+    if(showAllGeoBtn) showAllGeoBtn.addEventListener('click', async ()=>{
+      const mapHolder = document.getElementById('all-geo-map-'+id);
+      const listHolder = document.getElementById('all-geo-list');
+      mapHolder.style.display = 'block';
+      if(!allGeoMap && typeof L !== 'undefined'){
+        allGeoMap = L.map(mapHolder).setView([51.6720, 39.1843], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap' }).addTo(allGeoMap);
+      }
+      setTimeout(()=> allGeoMap && allGeoMap.invalidateSize(), 150);
+
+      const THIRTY_MIN = 30*60*1000;
+      const now = Date.now();
+      const geo = await sGet('geo_ep'+id, {}); // читаем как есть, не обрезаем — это отдельное от обычного 3-минутного окна для игроков
+      const fresh = Object.values(geo).filter(g=> now - g.ts < THIRTY_MIN);
+
+      if(allGeoMap){
+        allGeoMap.eachLayer(l=>{ if(l instanceof L.Marker) allGeoMap.removeLayer(l); });
+        fresh.forEach(p=> L.marker([p.lat,p.lng]).addTo(allGeoMap).bindPopup(`<b>${escapeHtml(p.name)}</b><br>${timeAgo(p.ts)}`));
+      }
+      listHolder.innerHTML = fresh.length
+        ? fresh.map(p=> `📍 <b>${escapeHtml(p.name)}</b> — ${timeAgo(p.ts)}`).join('<br>')
+        : '<div class="empty-state">Пока никто не делился геолокацией за последние 30 минут</div>';
+    });
+
     if(ep.needsGeoShare) renderGeoList(id);
     if(ep.showMarkersMap) renderPlayerMarkersMap(id);
     loadChat(id);
@@ -2203,11 +2334,24 @@ async function openEpisode(id){
       await sSet('chat_ep'+id, chat.slice(-50));
       await pushEvent(text);
 
-      /* if this chapter tracks a single "tagger" (Городские Салки), tagging someone passes the role to them */
+      /* Городские Салки: осаливание передаёт роль только ЭТОГО конкретного водящего — остальные водящие не трогаются */
       if(ep.showTagger && targetPlayer){
         const eps = await sGet('episodes', {});
         eps[id] = eps[id] || {};
-        eps[id].tagger = targetPlayer.id;
+        eps[id].taggers = eps[id].taggers || [];
+        eps[id].taggerBecameAt = eps[id].taggerBecameAt || {};
+
+        // Баллы за конкретное действие: +1 за поимку, +1 доп. балл (итого 2), если поймал быстрее чем за 3 часа
+        const becameTaggerAt = eps[id].taggerBecameAt[state.me.id] || Date.now();
+        const hoursAsTagger = (Date.now() - becameTaggerAt) / 3600000;
+        const bonus = hoursAsTagger < 3 ? 1 : 0;
+        await applyPoints(state.me.id, 1 + bonus, bonus ? 'быстрая поимка' : 'поймал');
+        if(bonus) await pushEvent(`⚡ ${state.me.name} поймал(а) меньше чем за 3 часа — бонусный балл!`);
+
+        eps[id].taggers = eps[id].taggers.map(tid=> tid===state.me.id ? targetPlayer.id : tid);
+        delete eps[id].taggerBecameAt[state.me.id];
+        eps[id].taggerBecameAt[targetPlayer.id] = Date.now();
+        eps[id].everTagger = [...new Set([...(eps[id].everTagger||[]), targetPlayer.id])];
         await sSet('episodes', eps);
         sendPushToAll('EPISODE', `${ep.name}: теперь водит ${targetPlayer.name}!`);
       }
@@ -2507,7 +2651,7 @@ function renderProfile(){
     if(!target) return;
     if(target.password !== cur){ status.textContent = 'Текущий пароль введён неверно'; status.style.color = '#ff8a75'; return; }
     target.password = nw;
-    const ok = await sSet('players', players);
+    const ok = await savePlayers(players);
     if(ok){
       state.me = target;
       status.textContent = 'Пароль изменён ✓'; status.style.color = 'var(--ember-bright)';
@@ -2528,7 +2672,7 @@ function renderProfile(){
       const target = players.find(x=>x.id===p.id);
       if(!target) return;
       target.photo = compressed;
-      const ok = await sSet('players', players);
+      const ok = await savePlayers(players);
       if(ok){ state.me = target; state.profiles = await fetchProfiles(); renderProfile(); renderHeader(); }
     };
     reader.readAsDataURL(file);
@@ -2543,7 +2687,7 @@ function renderProfile(){
     const target = players.find(x=>x.id===p.id);
     if(!target) return;
     target.name = newName;
-    const ok = await sSet('players', players);
+    const ok = await savePlayers(players);
     if(ok){
       state.me = target; state.profiles = await fetchProfiles();
       status.textContent = 'Сохранено ✓'; status.style.color = 'var(--ember-bright)';
@@ -2711,6 +2855,12 @@ async function renderAdmin(){
     ">🏆 Завершить сезон</button>
     <div style="font-size:12px; color:var(--ash); margin-top:8px;">Раскроет победителя сезона на весь экран и символически передаст ему весь банк. Необратимо — используй только когда сезон реально закончен.</div>
   </div>`;
+  html += `<h2 class="section-title" style="margin-top:30px;">📦 Резервные копии</h2>
+    <div class="admin-ep-block">
+      <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">Полный снимок всего: игроки и баллы, эпизоды, события, банк, метки, команды. Обновляется автоматически при значимых изменениях. Хранятся последние 10.</div>
+      <div id="backups-list">Загружаю...</div>
+    </div>
+  `;
   html += `<h2 class="section-title" style="margin-top:30px; color:#ff8a75;">⚠️ Полный сброс сезона</h2>
     <div class="admin-ep-block" style="border-color:#ff5c5c;">
       <div style="font-size:13px; color:var(--ash); margin-bottom:10px;">
@@ -2761,6 +2911,7 @@ async function renderAdmin(){
       const eps = await sGet('episodes', {});
       eps[id] = eps[id] || {};
       eps[id].status = sel.value;
+      await saveFullBackup();
       await sSet('episodes', eps);
       const meta = getEpisodeMeta(id);
       await pushEvent(`Статус эпизода «${meta.name}» изменён на «${sel.options[sel.selectedIndex].text}»`);
@@ -2871,6 +3022,7 @@ async function renderAdmin(){
   document.getElementById('prize-save').addEventListener('click', async ()=>{
     const val = parseInt(document.getElementById('prize-input').value, 10) || 0;
     await sSet('prize_pool', val);
+    await saveFullBackup();
     await pushEvent(`Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
     sendPushToAll('EPISODE', `Банк обновлён: ${val.toLocaleString('ru-RU')} ₽`);
     updateHeaderBank();
@@ -2886,6 +3038,7 @@ async function renderAdmin(){
     const events = await sGet('custom_events', []);
     events.push({ id: 'ev'+Date.now(), title, description: desc, status:'closed', leader:null, countdownEnd:null, createdAt: Date.now() });
     await sSet('custom_events', events);
+    await saveFullBackup();
     await pushEvent(`Создано новое событие «${title}»`);
     renderAdmin();
   });
@@ -2902,6 +3055,40 @@ async function renderAdmin(){
     await playSeasonFinale(winner);
   });
 
+  (async ()=>{
+    const backupsEl = document.getElementById('backups-list');
+    if(!backupsEl) return;
+    const backups = await sGet('full_backups', []);
+    if(!backups.length){ backupsEl.innerHTML = '<div class="empty-state">Резервных копий пока нет — появятся сами после первого сохранения баллов.</div>'; return; }
+    backupsEl.innerHTML = [...backups].reverse().map((b,i)=>{
+      const realIndex = backups.length - 1 - i;
+      const dt = new Date(b.ts).toLocaleString('ru-RU');
+      const playersCount = (b.data.players||[]).length;
+      return `<div class="admin-ep-row"><div>${dt} · ${playersCount} игроков, полный снимок</div><button class="small-btn" data-restore-backup="${realIndex}">Восстановить эту</button></div>`;
+    }).join('');
+    backupsEl.querySelectorAll('[data-restore-backup]').forEach(btn=> btn.addEventListener('click', async ()=>{
+      const idx = parseInt(btn.dataset.restoreBackup,10);
+      const target = backups[idx];
+      if(!target){ alert('Не удалось найти эту копию.'); return; }
+      if(!confirm(`Восстановить ВСЁ игровое состояние на ${new Date(target.ts).toLocaleString('ru-RU')}? Игроки, эпизоды, события, банк, метки и команды будут заменены этими данными. Текущее состояние тоже сохранится отдельной резервной копией перед этим.`)) return;
+
+      const ok = await savePlayers(target.data.players); // savePlayers сама сделает резервную копию текущего состояния перед заменой
+      if(!ok){ alert('Не удалось восстановить — список игроков в этой копии пуст или повреждён.'); return; }
+
+      for(const key of BACKUP_KEYS){
+        if(key === 'players') continue; // уже восстановили выше через savePlayers
+        if(key in target.data) await sSet(key, target.data[key]);
+      }
+
+      state.profiles = await fetchProfiles();
+      state.episodes = await sGet('episodes', {});
+      state.episodeOverrides = await sGet('episode_overrides', {});
+      state.customEpisodes = await sGet('custom_episodes', []);
+      await pushEvent(`Организатор восстановил всё игровое состояние из резервной копии от ${new Date(target.ts).toLocaleString('ru-RU')}`);
+      renderAdmin();
+    }));
+  })();
+
   document.getElementById('full-season-reset-btn').addEventListener('click', async ()=>{
     if(!confirm('Точно сбросить весь сезон? Все имена, фото и баллы всех игроков исчезнут. Логины и пароли останутся прежними.')) return;
     if(!confirm('Последняя проверка — это нельзя отменить. Сбросить прогресс всех 25 аккаунтов и обнулить банк?')) return;
@@ -2909,12 +3096,14 @@ async function renderAdmin(){
     const btn = document.getElementById('full-season-reset-btn');
     btn.disabled = true; btn.textContent = 'Сбрасываю...';
 
-    const freshPlayers = SEED_ACCOUNTS.map((acc,i)=> ({
+    const extraAccounts = await sGet('extra_seed_accounts', []); // игроки, добавленные кнопкой "+" в Админке — тоже переживают сброс
+    const allAccounts = [...SEED_ACCOUNTS, ...extraAccounts];
+    const freshPlayers = allAccounts.map((acc,i)=> ({
       id: 'p' + (i+1), login: acc.login, password: acc.password,
       name: acc.login, displayNameSet: false, photo: null,
       number: String(i+1).padStart(2,'0'), points: 0, achievements: []
     }));
-    await sSet('players', freshPlayers);
+    await savePlayers(freshPlayers);
     await sSet('episodes', {});
     await sSet('custom_events', []);
     await sSet('prize_pool', 0);
@@ -2933,6 +3122,7 @@ async function renderAdmin(){
     const half = Math.ceil(shuffled.length/2);
     const teams = { A: shuffled.slice(0,half).map(p=>p.id), B: shuffled.slice(half).map(p=>p.id) };
     await sSet('teams_ep4', teams);
+    await saveFullBackup();
     await pushEvent('🚩 Ночной дозор — команды разделены заново');
     renderTeamsResult(teams);
   });
@@ -3096,6 +3286,7 @@ async function initMarkersAdmin(){
       address, description: desc, photo: markerPhotoData, video: video || null
     });
     const ok = await sSet('markers_ep2', markers);
+    await saveFullBackup();
     if(!ok){ alert('Не удалось сохранить — попробуй ещё раз.'); return; }
     document.getElementById('marker-cancel-btn').click();
     renderMarkersMapPoints();
@@ -3172,13 +3363,59 @@ function renderTeamsResult(teams){
 function renderAdminPlayersList(){
   const el = document.getElementById('admin-players-list');
   if(!el) return;
-  el.innerHTML = `<button class="small-btn danger" id="reset-all-points-btn" style="margin-bottom:12px;">Обнулить баллы всем</button>` +
+  el.innerHTML = `
+    <div class="admin-ep-block" style="border-color:var(--ember-bright); margin-bottom:14px;">
+      <div style="font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--ash); letter-spacing:.06em; margin-bottom:10px;">+ НОВЫЙ ИГРОК</div>
+      <input type="text" class="paper-input" id="new-player-name" placeholder="Имя (обычно совпадает с логином)" style="margin-bottom:8px;">
+      <input type="text" class="paper-input" id="new-player-login" placeholder="Логин для входа" style="margin-bottom:8px;">
+      <input type="text" class="paper-input" id="new-player-password" placeholder="Пароль (например 6 цифр)" style="margin-bottom:8px;">
+      <button class="small-btn" id="new-player-create">+ Добавить игрока</button>
+      <div id="new-player-status" style="min-height:16px; font-size:12px; color:var(--ember-bright); margin-top:6px;"></div>
+    </div>
+    <button class="small-btn danger" id="reset-all-points-btn" style="margin-bottom:12px;">Обнулить баллы всем</button>` +
     (state.profiles.map(p=> `<div class="admin-ep-row"><div>${escapeHtml(p.name)} · №${p.number} · ${p.points} б.</div><div style="display:flex; gap:6px; flex-wrap:wrap;"><button class="small-btn" data-plus="${p.id}">+1</button><button class="small-btn" data-minus="${p.id}">−1</button><button class="small-btn" data-rename="${p.id}">✎ Имя</button><button class="small-btn danger" data-del="${p.id}">Удалить</button></div></div>`).join('') || '<div class="empty-state">Пока нет игроков</div>');
+
+  document.getElementById('new-player-create').addEventListener('click', async ()=>{
+    const nameEl = document.getElementById('new-player-name');
+    const loginEl = document.getElementById('new-player-login');
+    const passEl = document.getElementById('new-player-password');
+    const status = document.getElementById('new-player-status');
+    const name = nameEl.value.trim();
+    const login = loginEl.value.trim();
+    const password = passEl.value.trim();
+    status.textContent = '';
+    if(!login || !password){ status.textContent = 'Логин и пароль обязательны.'; status.style.color = '#ff8a75'; return; }
+
+    const players = await sGet('players', []);
+    if(players.some(p=> p.login.toLowerCase()===login.toLowerCase() && p.password===password)){
+      status.textContent = 'Такой логин+пароль уже есть.'; status.style.color = '#ff8a75'; return;
+    }
+    const nextNum = players.length + 1;
+    players.push({
+      id: 'p'+Date.now(), name: name || login, login, photo: null,
+      number: String(nextNum).padStart(2,'0'), points: 0, password,
+      achievements: [], displayNameSet: false
+    });
+    const ok1 = await savePlayers(players);
+
+    // сохраняем отдельно, чтобы этот игрок пережил даже "Полный сброс сезона" в будущем
+    const extra = await sGet('extra_seed_accounts', []);
+    extra.push({ login, password });
+    await sSet('extra_seed_accounts', extra);
+
+    if(!ok1){ status.textContent = 'Не удалось сохранить — попробуй ещё раз.'; status.style.color = '#ff8a75'; return; }
+    await pushEvent(`Добавлен новый игрок: ${name || login}`);
+    state.profiles = await fetchProfiles();
+    nameEl.value=''; loginEl.value=''; passEl.value='';
+    status.textContent = 'Готово ✓ — можно сразу заходить этим логином.';
+    renderAdminPlayersList();
+  });
+
   document.getElementById('reset-all-points-btn').addEventListener('click', async ()=>{
     if(!confirm('Обнулить баллы абсолютно всем игрокам? Это нельзя отменить.')) return;
     const players = await sGet('players', []);
     players.forEach(p=> p.points = 0);
-    const ok = await sSet('players', players);
+    const ok = await savePlayers(players);
     if(!ok){ alert('Не удалось сохранить — попробуй ещё раз.'); return; }
     await pushEvent('Организатор обнулил баллы всем игрокам');
     state.profiles = await fetchProfiles();
@@ -3195,7 +3432,7 @@ function renderAdminPlayersList(){
     const target = players.find(x=>x.id===p.id);
     if(!target) return;
     target.name = newName.trim();
-    const ok = await sSet('players', players);
+    const ok = await savePlayers(players);
     if(!ok){ alert('Не удалось переименовать — проблема с сохранением.'); return; }
     await pushEvent(`Игрок переименован в ${newName.trim()}`);
     state.profiles = await fetchProfiles();
@@ -3204,7 +3441,7 @@ function renderAdminPlayersList(){
   el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
     if(!confirm('Удалить игрока из этого сезона? Аккаунт из готового списка можно будет использовать заново позже.')) return;
     const players = (await sGet('players', [])).filter(p=>p.id!==btn.dataset.del);
-    const ok = await sSet('players', players);
+    const ok = await savePlayers(players);
     if(!ok){ alert('Не удалось удалить — проблема с сохранением.'); return; }
     state.profiles = await fetchProfiles();
     renderHeader(); renderAdminPlayersList();
@@ -3242,17 +3479,22 @@ function handleDeepLinkOnEnter(){
   if(sbClient){
     const savedId = await pGet('my_player_id', null);
     if(savedId){
-      await ensurePlayersSeeded();
-      const profile = await fetchMyProfile(savedId);
-      if(profile){
-        state.me = profile;
-        document.getElementById('welcome').style.display = 'none';
-        document.getElementById('app').style.display = 'block';
-        stopWelcomeEffects();
-        await refreshAll();
-        startBackgroundPollers();
-        handleDeepLinkOnEnter();
-        return;
+      try{
+        await ensurePlayersSeeded();
+        const profile = await fetchMyProfile(savedId);
+        if(profile){
+          state.me = profile;
+          document.getElementById('welcome').style.display = 'none';
+          document.getElementById('app').style.display = 'block';
+          stopWelcomeEffects();
+          await refreshAll();
+          startBackgroundPollers();
+          handleDeepLinkOnEnter();
+          return;
+        }
+      } catch(e){
+        console.warn('Не удалось автоматически войти — покажу экран входа заново:', e);
+        // не страшно — просто покажем обычный экран входа ниже, данные при этом не тронуты
       }
     }
   }
