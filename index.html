@@ -485,9 +485,6 @@ table.lb tr:hover td{ background:rgba(201,124,44,0.04);}
 .event-card:hover{ border-color:var(--ember);}
 .event-card.closed{ opacity:.55; cursor:not-allowed;}
 .event-card.event-live{ border-color:var(--ember-bright); background:rgba(201,124,44,.08); animation: cardIn .5s ease forwards, pulseGlow 2.4s ease-in-out infinite; }
-tr.player-highlighted td{ background:rgba(201,124,44,.1); }
-tr.player-highlighted{ box-shadow: inset 3px 0 0 var(--ember-bright); animation: pulseGlow 2.6s ease-in-out infinite; }
-.player-card.player-highlighted{ border-color:var(--ember-bright); background:rgba(201,124,44,.1); animation: pulseGlow 2.6s ease-in-out infinite; }
 .event-card .evname{ font-family:'Cinzel',serif; font-size:16px;}
 .start-game-btn-highlight{
   font-size:16px !important; padding:14px 26px !important; font-weight:700;
@@ -921,7 +918,12 @@ const CHAPTER_WORD = "Эпизод";
 
 /* Подсвечиваются на Главной и в Игроках — сопоставлено по исходному порядку регистрации:
    Ксеня, Никита Т, Егор, Злата, Арина, Саня, Тимур, Ваня Щ, Ваня К, Женя, Даша, Ульяна Ш, Дима М, Сава, Маша Ф */
-const HIGHLIGHTED_PLAYER_IDS = ['p1','p2','p3','p4','p5','p8','p9','p10','p11','p12','p14','p16','p23','p26','p27'];
+/* Эти показываются на Главной и в Игроках сразу, даже до того, как реально зайдут на сайт —
+   их имя уже совпадает с логином, так что подмены данных не требуется, только правило показа.
+   Как только человек реально войдёт и задаст своё имя/фото — это просто станет настоящими данными,
+   ничего дополнительно переключать не нужно.
+   Ксеня, Никита Т, Егор, Злата, Арина, Саня, Тимур, Ваня Щ, Ваня К, Женя, Даша, Ульяна Ш, Дима М, Сава, Маша Ф */
+const PRE_REGISTERED_IDS = ['p1','p2','p3','p4','p5','p8','p9','p10','p11','p12','p14','p16','p23','p26','p27'];
 
 let state = { profiles:[], episodes:{}, episodeOverrides:{}, me:null, isAdmin:false, currentEpisode:null, chatPoll:null, pendingSave:false };
 
@@ -2075,11 +2077,11 @@ function renderHome(){
   } else {
     banner.innerHTML = '';
   }
-  const sorted = [...state.profiles].filter(p=>p.displayNameSet).sort((a,b)=> b.points - a.points);
+  const sorted = [...state.profiles].filter(p=> p.displayNameSet || PRE_REGISTERED_IDS.includes(p.id)).sort((a,b)=> b.points - a.points);
   const tbody = document.getElementById('lb-body');
   tbody.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img class="avatar-sm" src="${p.photo}">` : `<span class="avatar-sm" style="display:inline-flex;align-items:center;justify-content:center;background:var(--ash-dim);">${escapeHtml(p.name[0]||'?')}</span>`;
-    return `<tr class="${HIGHLIGHTED_PLAYER_IDS.includes(p.id) ? 'player-highlighted' : ''}"><td class="rank ${i===0?'top1':''}">${i+1}</td><td>${av}${escapeHtml(p.name)} <span class="mono" style="color:var(--ash);font-size:11px;">№${p.number}</span></td><td style="text-align:right" class="pts" data-target="${p.points}">0</td></tr>`;
+    return `<tr><td class="rank ${i===0?'top1':''}">${i+1}</td><td>${av}${escapeHtml(p.name)} <span class="mono" style="color:var(--ash);font-size:11px;">№${p.number}</span></td><td style="text-align:right" class="pts" data-target="${p.points}">0</td></tr>`;
   }).join('') || '<tr><td colspan="3" class="empty-state">Пока нет игроков</td></tr>';
   animateCounts();
 }
@@ -2099,10 +2101,10 @@ function animateCounts(){
 /* ============ PLAYERS ============ */
 function renderPlayers(){
   const grid = document.getElementById('players-grid');
-  const sorted = [...state.profiles].filter(p=>p.displayNameSet).sort((a,b)=> b.points - a.points);
+  const sorted = [...state.profiles].filter(p=> p.displayNameSet || PRE_REGISTERED_IDS.includes(p.id)).sort((a,b)=> b.points - a.points);
   grid.innerHTML = sorted.map((p,i)=>{
     const av = p.photo ? `<img src="${p.photo}">` : `<div class="noph">${escapeHtml(p.name[0]||'?')}</div>`;
-    return `<div class="player-card ${HIGHLIGHTED_PLAYER_IDS.includes(p.id) ? 'player-highlighted' : ''}" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
+    return `<div class="player-card" style="animation-delay:${i*0.04}s" data-id="${p.id}">${av}<div class="pname">${escapeHtml(p.name)}</div><div class="pnum">№${p.number} · ${p.points} б.</div></div>`;
   }).join('') || '<div class="empty-state">Пока нет игроков</div>';
   grid.querySelectorAll('.player-card').forEach(c=> c.addEventListener('click', ()=> openProfileModal(c.dataset.id)));
 }
